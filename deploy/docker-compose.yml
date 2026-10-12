@@ -1,0 +1,66 @@
+# School Administration Agent — local deployment
+#
+# Copy env.example to .env and fill in real values. NEVER commit .env.
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: schoolagent
+      POSTGRES_USER: schoolagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set an explicit database password}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schoolagent -d schoolagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Read-only browser investigation worker (M7). Internal network only.
+  playwright-worker:
+    build: ../playwright-worker
+    ports:
+      - "127.0.0.1:8100:8100"
+    restart: unless-stopped
+
+  school-api:
+    build: ../backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SCHOOLAGENT_DB_HOST: postgres
+      SCHOOLAGENT_DB_PORT: "5432"
+      SCHOOLAGENT_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set an explicit database password}
+      SCHOOLAGENT_MASTER_KEY: ${SCHOOLAGENT_MASTER_KEY:?Generate a persistent vault key}
+      SCHOOLAGENT_PUBLIC_URL: ${SCHOOLAGENT_PUBLIC_URL:?Set the application origin}
+      SCHOOLAGENT_GOOGLE_CLIENT_ID: ${SCHOOLAGENT_GOOGLE_CLIENT_ID:-}
+      SCHOOLAGENT_GOOGLE_CLIENT_SECRET: ${SCHOOLAGENT_GOOGLE_CLIENT_SECRET:-}
+      SCHOOLAGENT_GOOGLE_REDIRECT_URI: ${SCHOOLAGENT_GOOGLE_REDIRECT_URI:-${SCHOOLAGENT_PUBLIC_URL}/api/google/callback}
+      SCHOOLAGENT_GOOGLE_SUCCESS_REDIRECT: ${SCHOOLAGENT_GOOGLE_SUCCESS_REDIRECT:-${SCHOOLAGENT_PUBLIC_URL}/settings}
+      SCHOOLAGENT_GMAIL_POLLING: ${SCHOOLAGENT_GMAIL_POLLING:-false}
+      SCHOOLAGENT_GMAIL_QUERY: ${SCHOOLAGENT_GMAIL_QUERY:-in:inbox}
+      SCHOOLAGENT_AI_API_KEY: ${SCHOOLAGENT_AI_API_KEY:-}
+      SCHOOLAGENT_AI_BASE_URL: ${SCHOOLAGENT_AI_BASE_URL:-https://api.z.ai/api/anthropic}
+      SCHOOLAGENT_INITIAL_USERNAME: ${SCHOOLAGENT_INITIAL_USERNAME:-}
+      SCHOOLAGENT_INITIAL_PASSWORD: ${SCHOOLAGENT_INITIAL_PASSWORD:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./api-data:/app/data
+    restart: unless-stopped
+
+  school-web:
+    build: ../frontend
+    depends_on:
+      - school-api
+    ports:
+      - "127.0.0.1:4200:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

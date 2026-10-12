@@ -1,0 +1,56 @@
+# Build / IDE
+target/
+build/
+dist/
+out/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+.angular/
+npm-debug.log*
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local env & secrets — never commit real values
+*.local
+.env
+.env.*
+!.env.example
+!deploy/.env.example
+*.local.md
+*.local.json
+*.local.yml
+*.local.yaml
+deploy/**/env
+secretkey.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.sql.gz
+*.dump
+*.har
+*.bundle
+backups/
+api-data/
+
+# Runtime data
+data/
+logs/
+playwright-report/
+test-results/
+
+# Frontend build
+frontend/dist/
+frontend/.angular/

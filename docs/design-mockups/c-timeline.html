@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>C · Timeline — School Agent mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #edf1f6;
+    --card: #ffffff;
+    --navy: #13233a;
+    --navy-2: #1d3252;
+    --ink: #13233a;
+    --ink-2: #3a4a60;
+    --muted: #6b7a90;
+    --line: #dfe5ee;
+    --coral: #ff6a4d;
+    --coral-soft: #ffece8;
+    --sun: #ffb020;
+    --sun-soft: #fff4dd;
+    --sky: #3b82f6;
+    --sky-soft: #e6f0ff;
+    --r: 20px;
+    --font: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+  .i { flex: none; display: block; }
+
+  .top { max-width: 1240px; margin: 0 auto; padding: 18px 28px; display: flex; align-items: center; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.1rem; letter-spacing: -0.02em; }
+  .brand .m { width: 36px; height: 36px; border-radius: 12px; background: var(--coral); color: #fff; display: grid; place-items: center; transform: rotate(-6deg); }
+  .top nav { display: flex; gap: 4px; background: var(--card); border-radius: 999px; padding: 4px; margin-left: 18px; box-shadow: 0 1px 2px rgb(19 35 58 / 6%); }
+  .top nav a { padding: 7px 16px; border-radius: 999px; font-weight: 600; font-size: .9rem; color: var(--muted); }
+  .top nav a.on { background: var(--navy); color: #fff; }
+  .top .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .round { width: 42px; height: 42px; border-radius: 50%; background: var(--card); display: grid; place-items: center; box-shadow: 0 1px 2px rgb(19 35 58 / 6%); color: var(--ink-2); }
+  .stack { display: flex; }
+  .stack span { width: 38px; height: 38px; border-radius: 50%; border: 3px solid var(--bg); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: .85rem; margin-left: -10px; }
+  .stack span:first-child { margin-left: 0; }
+
+  .page { max-width: 1240px; margin: 0 auto; padding: 4px 28px 100px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
+
+  /* ---------- hero with date strip ---------- */
+  .hero { grid-column: 1 / -1; background: var(--navy); color: #fff; border-radius: 28px; padding: 26px 28px 22px; position: relative; overflow: hidden; }
+  .hero::after { content: ''; position: absolute; right: -80px; top: -120px; width: 340px; height: 340px; border-radius: 50%; background: radial-gradient(circle, rgb(255 106 77 / 35%), transparent 65%); }
+  .hero-row { display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; position: relative; z-index: 1; }
+  .hero h1 { margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; }
+  .hero p { margin: 6px 0 0; color: #b8c4d6; max-width: 34em; }
+  .hero p b { color: #fff; }
+  .stats { margin-left: auto; display: flex; gap: 10px; }
+  .stat { background: var(--navy-2); border-radius: 16px; padding: 10px 16px; min-width: 96px; }
+  .stat b { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+  .stat span { font-size: .75rem; color: #b8c4d6; font-weight: 600; }
+  .stat.hot { background: var(--coral); }
+  .stat.hot span { color: #ffe3dc; }
+  .strip { margin-top: 22px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(62px, 1fr); gap: 8px; overflow-x: auto; scrollbar-width: none; position: relative; z-index: 1; padding-bottom: 2px; }
+  .day { background: var(--navy-2); border-radius: 16px; padding: 10px 0 8px; text-align: center; display: grid; gap: 2px; justify-items: center; }
+  .day .w { font-size: .7rem; font-weight: 700; color: #8fa0b8; text-transform: uppercase; letter-spacing: .06em; }
+  .day .n { font-size: 1.2rem; font-weight: 800; }
+  .day .ds { display: flex; gap: 3px; height: 7px; }
+  .day .ds i { width: 7px; height: 7px; border-radius: 50%; }
+  .day.today { background: #fff; color: var(--navy); }
+  .day.today .w { color: var(--coral); }
+  .day.we { background: transparent; box-shadow: inset 0 0 0 1px var(--navy-2); }
+  .day.off { background: repeating-linear-gradient(135deg, var(--navy-2) 0 6px, #25406a 6px 10px); }
+  .day.off .w { color: var(--sun); }
+
+  /* ---------- timeline ---------- */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 18px; }
+  .fchip { background: var(--card); border-radius: 999px; padding: 8px 16px; font-weight: 600; font-size: .88rem; color: var(--ink-2); display: inline-flex; gap: 8px; align-items: center; box-shadow: 0 1px 2px rgb(19 35 58 / 6%); }
+  .fchip.on { background: var(--navy); color: #fff; }
+  .fchip i { width: 9px; height: 9px; border-radius: 50%; }
+  .fchip em { font-style: normal; font-size: .75rem; opacity: .7; }
+
+  .catch { background: var(--coral-soft); border-radius: var(--r); padding: 16px; margin-bottom: 26px; }
+  .catch-h { display: flex; align-items: center; gap: 8px; font-weight: 800; color: #c73b1f; margin: 0 4px 12px; }
+
+  .tday { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 18px; }
+  .tday + .tday { margin-top: 8px; }
+  .tlabel { position: relative; padding-top: 16px; text-align: right; }
+  .tlabel b { display: block; font-weight: 800; font-size: 1rem; letter-spacing: -0.01em; }
+  .tlabel small { color: var(--muted); font-weight: 600; font-size: .8rem; }
+  .tlabel.today b { color: var(--coral); }
+  .titems { border-left: 2px dashed #c8d2e0; padding: 8px 0 18px 20px; display: grid; gap: 12px; position: relative; }
+  .titems::before { content: ''; position: absolute; left: -7px; top: 22px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 3px solid var(--muted); }
+  .today-row .titems::before { border-color: var(--coral); background: var(--coral); }
+  .ent { background: var(--card); border-radius: var(--r); padding: 16px 18px; display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 16px; box-shadow: 0 1px 2px rgb(19 35 58 / 5%), 0 8px 24px -16px rgb(19 35 58 / 25%); transition: transform .15s; }
+  .ent:hover { transform: translateY(-1px); }
+  .ent .rail { border-radius: 99px; }
+  .ent .k { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .78rem; font-weight: 700; color: var(--muted); }
+  .kbadge { color: #fff; padding: 2px 9px; border-radius: 999px; }
+  .kind { display: inline-flex; gap: 5px; align-items: center; padding: 2px 9px; border-radius: 999px; background: var(--bg); color: var(--ink-2); }
+  .kind.due { background: var(--sun-soft); color: #9a6200; }
+  .kind.late { background: var(--coral); color: #fff; }
+  .kind.ev { background: var(--sky-soft); color: #1d5fd0; }
+  .ent h3 { margin: 6px 0 4px; font-size: 1.05rem; font-weight: 700; line-height: 1.35; letter-spacing: -0.01em; }
+  .ent p { margin: 0; color: var(--ink-2); font-size: .92rem; }
+  .ent .facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: .84rem; color: var(--muted); font-weight: 500; }
+  .ent .facts span { display: inline-flex; gap: 5px; align-items: center; }
+  .ent .chg { margin-top: 10px; font-size: .84rem; font-weight: 600; color: #9a6200; display: flex; gap: 6px; align-items: center; }
+  .tick { width: 40px; height: 40px; border-radius: 14px; border: 2px solid var(--line); display: grid; place-items: center; color: var(--muted); align-self: center; }
+  .tick:hover { border-color: #22a06b; color: #22a06b; background: #e6f6ee; }
+  .cur { font-weight: 800; color: var(--ink); }
+
+  /* ---------- side ---------- */
+  .side { display: grid; gap: 18px; position: sticky; top: 18px; }
+  .panel { background: var(--card); border-radius: var(--r); padding: 18px; box-shadow: 0 1px 2px rgb(19 35 58 / 5%); }
+  .panel h4 { margin: 0 0 12px; font-size: .95rem; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .panel h4 em { margin-left: auto; font-style: normal; font-size: .75rem; background: var(--sky-soft); color: #1d5fd0; padding: 1px 8px; border-radius: 999px; }
+  .drop { border: 2px dashed #c8d2e0; border-radius: 16px; padding: 18px; text-align: center; color: var(--muted); font-size: .88rem; }
+  .drop .ico { width: 48px; height: 48px; border-radius: 16px; background: var(--coral-soft); color: var(--coral); display: grid; place-items: center; margin: 0 auto 8px; }
+  .drop b { color: var(--ink); display: block; font-size: .95rem; }
+  .note { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .note:first-of-type { border-top: 0; padding-top: 0; }
+  .note i { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; }
+  .note b { display: block; font-weight: 700; font-size: .9rem; line-height: 1.35; }
+  .note small { color: var(--muted); font-size: .8rem; }
+  .note.new b::after { content: ' •'; color: var(--sky); }
+  .askbox { background: linear-gradient(160deg, #fff, #f3f6fb); }
+  .askbox .bubble { background: var(--bg); border-radius: 14px 14px 14px 4px; padding: 10px 12px; font-size: .88rem; color: var(--ink-2); margin-bottom: 10px; }
+  .askbox .field { display: flex; gap: 8px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 6px 6px 6px 12px; }
+  .askbox input { border: 0; outline: 0; font: inherit; flex: 1; min-width: 0; font-size: .9rem; }
+  .askbox .go { width: 34px; height: 34px; border-radius: 10px; background: var(--navy); color: #fff; display: grid; place-items: center; }
+  .sug { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .sug span { font-size: .78rem; font-weight: 600; background: var(--bg); padding: 4px 10px; border-radius: 999px; color: var(--ink-2); }
+
+  .fab { display: none; }
+
+  /* ---------- drawer / sheet (detail) ---------- */
+  .scrim { position: fixed; inset: 0; background: rgb(19 35 58 / 45%); backdrop-filter: blur(2px); z-index: 30; }
+  .drawer { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(600px, calc(100vw - 24px)); background: var(--bg); border-radius: 28px; z-index: 31; overflow-y: auto; box-shadow: -20px 0 60px -20px rgb(0 0 0 / 40%); }
+  .dr-head { background: var(--card); padding: 18px 22px 22px; border-radius: 28px 28px 0 0; position: relative; }
+  .grab { display: none; }
+  .dr-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+  .dr-bar .round { width: 38px; height: 38px; background: var(--bg); box-shadow: none; }
+  .dr-bar .sp { margin-left: auto; display: flex; gap: 8px; }
+  .dr-head h2 { margin: 8px 0 8px; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
+  .dr-head p { margin: 0; color: var(--ink-2); }
+  .dr-body { padding: 18px 22px 110px; display: grid; gap: 14px; }
+  .blk { background: var(--card); border-radius: var(--r); padding: 16px 18px; }
+  .blk h3 { margin: 0 0 12px; font-size: .8rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; }
+  .todo { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .todo:first-of-type { border-top: 0; padding-top: 0; }
+  .todo .c { width: 26px; height: 26px; border-radius: 9px; border: 2px solid var(--line); display: grid; place-items: center; color: #fff; }
+  .todo.done .c { background: #22a06b; border-color: #22a06b; }
+  .todo.done b { text-decoration: line-through; color: var(--muted); }
+  .todo b { font-weight: 700; font-size: .95rem; }
+  .todo small { display: block; color: var(--muted); font-size: .8rem; }
+  .who { font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); white-space: nowrap; }
+  .who.set { background: var(--navy); color: #fff; }
+  .bring { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .bring span { background: var(--sun-soft); border-radius: 12px; padding: 10px 12px; font-weight: 600; font-size: .88rem; display: flex; gap: 8px; align-items: center; color: #6b4700; }
+  .evt { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 14px; align-items: center; }
+  .evt .cal { background: var(--sky); color: #fff; border-radius: 16px; text-align: center; padding: 8px 0; }
+  .evt .cal small { display: block; font-size: .7rem; font-weight: 800; letter-spacing: .08em; opacity: .85; }
+  .evt .cal b { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+  .srcrow { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .srcrow:first-of-type { border-top: 0; padding-top: 0; }
+  .srcrow .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--bg); display: grid; place-items: center; }
+  .srcrow b { display: block; font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .srcrow small { color: var(--muted); font-size: .78rem; }
+  .pillbtn { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: .82rem; padding: 7px 12px; border-radius: 999px; background: var(--bg); white-space: nowrap; }
+  .chg { display: grid; gap: 10px; }
+  .chg div { background: var(--sun-soft); border-radius: 12px; padding: 10px 12px; font-size: .9rem; }
+  .chg small { display: block; color: #9a6200; font-size: .78rem; font-weight: 600; }
+  .dr-cta { position: sticky; bottom: 0; display: flex; gap: 10px; padding: 14px 22px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 30%); margin-top: -96px; }
+  .big { flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 14px; border-radius: 16px; font-weight: 800; background: var(--card); box-shadow: 0 1px 2px rgb(19 35 58 / 8%); }
+  .big.go { background: var(--navy); color: #fff; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1020px) {
+    .page { grid-template-columns: minmax(0, 1fr); }
+    .side { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .side .askbox { grid-column: 1 / -1; }
+  }
+  @media (max-width: 700px) {
+    .top { padding: 14px 16px; }
+    .top nav, .brand span:last-child { display: none; }
+    .page { padding: 0 12px 110px; gap: 20px; }
+    .hero { border-radius: 24px; padding: 20px 16px 16px; }
+    .hero h1 { font-size: 1.45rem; }
+    .stats { margin-left: 0; width: 100%; }
+    .stat { flex: 1; min-width: 0; padding: 8px 12px; }
+    .strip { grid-auto-columns: 54px; margin-right: -16px; padding-right: 16px; }
+    .filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .fchip { white-space: nowrap; }
+    .catch { padding: 12px; }
+    .tday { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .tlabel { text-align: left; padding: 8px 4px 2px; display: flex; gap: 8px; align-items: baseline; }
+    .titems { border-left: 0; padding: 4px 0 14px; }
+    .titems::before { display: none; }
+    .ent { grid-template-columns: 5px minmax(0, 1fr); gap: 12px; padding: 14px; }
+    .tick { grid-column: 2; justify-self: start; width: auto; height: auto; padding: 6px 14px; border-radius: 12px; gap: 6px; display: inline-flex; font-weight: 700; font-size: .85rem; }
+    .tick::after { content: 'Done'; }
+    .side { grid-template-columns: minmax(0, 1fr); }
+    .drop-panel { display: none; }
+    .fab { display: flex; position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 20; gap: 10px; }
+    .fab a { width: 58px; height: 58px; border-radius: 20px; display: grid; place-items: center; color: #fff; background: var(--navy); box-shadow: 0 12px 24px -8px rgb(19 35 58 / 55%); }
+    .fab a.snap { background: var(--coral); box-shadow: 0 12px 24px -8px rgb(255 106 77 / 60%); }
+
+    .drawer { top: 64px; left: 0; right: 0; bottom: 0; width: auto; border-radius: 28px 28px 0 0; }
+    .grab { display: block; width: 44px; height: 5px; border-radius: 9px; background: #cfd7e3; margin: -6px auto 12px; }
+    .dr-head { padding: 16px 16px 18px; }
+    .dr-head h2 { font-size: 1.3rem; }
+    .dr-body { padding: 14px 12px 110px; }
+    .dr-cta { padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
+    .bring { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="?"><span class="m" id="bm"></span><span>School Agent</span></a>
+  <nav><a class="on" href="?">Timeline</a><a href="#">Month</a><a href="#">Search</a><a href="#">Settings</a></nav>
+  <div class="right"><span class="round" id="sr"></span><span class="stack" id="stack"></span></div>
+</header>
+<div class="page" id="page"></div>
+<div class="fab"><a href="#" id="fchat"></a><a class="snap" href="#" id="fsnap"></a></div>
+<div id="overlay"></div>
+
+<script src="data.js"></script>
+<script src="icons.js"></script>
+<script>
+  const { items, kids, fmt, kid, counts, detail, params, strip } = MOCK;
+  document.getElementById('bm').innerHTML = icon('school', 19, 2.2);
+  document.getElementById('sr').innerHTML = icon('search', 19);
+  document.getElementById('fchat').innerHTML = icon('chat', 24);
+  document.getElementById('fsnap').innerHTML = icon('camera', 24);
+  document.getElementById('stack').innerHTML = kids.map((k) => `<span style="background:${k.color}">${k.name[0]}</span>`).join('') + '<span style="background:#94a3b8">R</span>';
+
+  function entry(it) {
+    const k = kid(it.kid), a = it.action, e = it.event;
+    const kindTag = it.overdue ? `<span class="kind late">${icon('alert', 12, 2.4)}${-MOCK.dayDiff(a.due)} days late</span>`
+      : a ? `<span class="kind due">${icon('clock', 12, 2.4)}Due</span>` : `<span class="kind ev">${icon('calendar', 12, 2.4)}Event${e?.time ? ' · ' + e.time : ''}</span>`;
+    return `<article class="ent">
+      <span class="rail" style="background:${k.color}"></span>
+      <div style="min-width:0">
+        <div class="k"><span class="kbadge" style="background:${k.color}">${k.name}</span>${kindTag}${a && !a.must ? '<span class="kind">Optional</span>' : ''}</div>
+        <h3><a href="?screen=detail">${it.title}</a></h3>
+        <p>${it.summary}</p>
+        <div class="facts">
+          ${a?.payment ? `<span class="cur">${icon('euro', 14)}${a.payment}</span>` : ''}
+          ${e?.location ? `<span>${icon('pin', 14)}${e.location}</span>` : ''}
+          ${a && e ? `<span>${icon('calendar', 14)}Event ${fmt.wdShort(e.date)}</span>` : ''}
+          <span>${icon(it.source.type === 'Email' ? 'mail' : it.source.type === 'Photo' ? 'camera' : 'file', 14)}${it.source.type}</span>
+        </div>
+        ${it.change ? `<div class="chg">${icon('bell', 14)}${it.change}</div>` : ''}
+      </div>
+      ${a ? `<button class="tick" title="Done">${icon('check', 18, 2.6)}</button>` : ''}
+    </article>`;
+  }
+
+  function timeline() {
+    const open = items.filter((i) => i.bucket === 'now' || i.bucket === 'coming');
+    const late = open.filter((i) => i.overdue);
+    const dated = open.filter((i) => !i.overdue);
+    const byDay = new Map();
+    dated.forEach((it) => { const iso = MOCK.dateOf(it); (byDay.get(iso) ?? byDay.set(iso, []).get(iso)).push(it); });
+    const days = [...byDay.keys()].sort();
+    const todayIso = '2026-09-29';
+    const label = (iso) => {
+      const n = MOCK.dayDiff(iso);
+      const main = n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n < 7 ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(iso + 'T12:00').getDay()] : fmt.short(iso);
+      const sub = n < 7 ? fmt.short(iso) : `in ${n} days`;
+      return `<b>${main}</b><small>${sub}</small>`;
+    };
+    return `
+      ${late.length ? `<div class="catch"><div class="catch-h">${icon('alert', 18, 2.4)}Catch up first</div><div style="display:grid;gap:12px">${late.map(entry).join('')}</div></div>` : ''}
+      <div class="tday today-row"><div class="tlabel today">${label(todayIso)}</div><div class="titems"><div style="color:var(--muted);font-weight:600;padding:14px 0 4px">Nothing due today — enjoy the quiet.</div></div></div>
+      ${days.map((iso) => `<div class="tday"><div class="tlabel">${label(iso)}</div><div class="titems">${byDay.get(iso).map(entry).join('')}</div></div>`).join('')}`;
+  }
+
+  function page() {
+    const s = strip(14);
+    return `
+      <section class="hero">
+        <div class="hero-row">
+          <div><h1>Good morning, Morgan</h1><p><b>1 overdue</b> and <b>3 due this week</b>. The Wandertag meeting point changed this morning.</p></div>
+          <div class="stats"><div class="stat hot"><b>${counts.overdue}</b><span>Overdue</span></div><div class="stat"><b>${counts.now}</b><span>To do</span></div><div class="stat"><b>${counts.noted}</b><span>Just info</span></div></div>
+        </div>
+        <div class="strip">${s.map((d) => `<div class="day ${d.today ? 'today' : ''} ${d.weekend ? 'we' : ''} ${d.off ? 'off' : ''}" title="${d.off ?? ''}"><span class="w">${d.today ? 'Today' : d.wd}</span><span class="n">${d.n}</span><span class="ds">${d.items.slice(0, 3).map((it) => `<i style="background:${kid(it.kid).color}"></i>`).join('')}</span></div>`).join('')}</div>
+      </section>
+      <main>
+        <div class="filters">
+          <span class="fchip on">Everyone <em>${counts.now + 2}</em></span>
+          ${kids.map((k) => `<span class="fchip"><i style="background:${k.color}"></i>${k.name} <em>${items.filter((x) => x.kid === k.id && (x.bucket === 'now' || x.bucket === 'coming')).length}</em></span>`).join('')}
+          <span class="fchip">${icon('check', 14, 2.4)}Done</span>
+        </div>
+        ${timeline()}
+      </main>
+      <aside class="side">
+        <div class="panel drop-panel"><div class="drop"><div class="ico">${icon('camera', 24)}</div><b>Snap or drop a letter</b>Photo, PDF or a forwarded email</div></div>
+        <div class="panel"><h4>${icon('info', 18)}Just so you know <em>2 new</em></h4>
+          ${items.filter((i) => i.bucket === 'noted').map((it) => `<a class="note ${it.unread ? 'new' : ''}" href="?screen=detail"><i style="background:${kid(it.kid).color}"></i><span><b>${it.title}</b><small>${kid(it.kid).name} · ${fmt.ago(it.source.date)}</small></span></a>`).join('')}
+        </div>
+        <div class="panel askbox"><h4>${icon('sparkle', 18)}Ask the assistant</h4>
+          <div class="bubble">Hi! Ask me about any date, letter or fee — I’ll show where I found it.</div>
+          <label class="field"><input placeholder="When is the next Elternabend?" /><span class="go">${icon('send', 16)}</span></label>
+          <div class="sug"><span>What’s due this week?</span><span>Any costs in October?</span><span>Mia’s swim days</span></div>
+        </div>
+      </aside>`;
+  }
+
+  function drawer() {
+    const d = detail, k = kid(d.kid), e = d.events[0];
+    return `<a class="scrim" href="?"></a>
+    <section class="drawer" role="dialog">
+      <div class="dr-head"><div class="grab"></div>
+        <div class="dr-bar"><a class="round" href="?">${icon('x', 18)}</a><span class="sp"><span class="round">${icon('bellOff', 17)}</span><span class="round">${icon('more', 18)}</span></span></div>
+        <div class="ent" style="box-shadow:none;padding:0;display:block"><div class="k"><span class="kbadge" style="background:${k.color}">${k.name} · ${k.klass}</span><span class="kind due">${icon('clock', 12, 2.4)}Due Fri 2 Oct</span><span class="kind">From Elternportal + Email</span></div></div>
+        <h2>${d.title}</h2>
+        <p>${d.summary}</p>
+      </div>
+      <div class="dr-body">
+        <div class="blk"><h3>To do <span>1 / 3</span></h3>${d.actions.map((a) => `<div class="todo ${a.done ? 'done' : ''}"><span class="c">${a.done ? icon('check', 14, 3) : ''}</span><span><b>${a.title}</b><small>${a.done ? 'Done' : 'Due ' + fmt.wdShort(a.due) + (a.must ? '' : ' · optional')}</small></span><span class="who ${a.who ? 'set' : ''}">${a.who ?? 'Take it'}</span></div>`).join('')}</div>
+        <div class="blk"><h3>Jamie brings</h3><div class="bring">${d.needs.map((n) => `<span>${icon('bag', 16)}${n}</span>`).join('')}</div></div>
+        <div class="blk"><h3>When</h3><div class="evt"><div class="cal"><small>${fmt.wd(e.date).toUpperCase()}</small><b>${fmt.day(e.date)}</b></div><div><b>${e.title}</b><div style="color:var(--ink-2)">${e.time} – ${e.end} · ${e.location}</div><div style="color:#9a6200;font-weight:700;font-size:.85rem">Meeting point moved (${e.note})</div></div></div></div>
+        <div class="blk"><h3>What changed</h3><div class="chg">${d.changes.map((c) => `<div>${c.text}<small>${fmt.short(c.at)} ${fmt.time(c.at)} · ${c.from}</small></div>`).join('')}</div></div>
+        <div class="blk"><h3>Sources</h3>${d.sources.map((s) => `<div class="srcrow"><span class="ic">${icon(s.type === 'Email' ? 'mail' : 'file', 18)}</span><span style="min-width:0"><b>${s.title}</b><small>${s.type} · ${fmt.short(s.date)} · ${s.lang}</small></span><span class="pillbtn">${icon('translate', 14)}Read</span></div>`).join('')}</div>
+        <div class="blk"><h3>History</h3>${d.history.map((h) => `<div style="font-size:.88rem;padding:4px 0"><b>${h.who}</b> ${h.text.charAt(0).toLowerCase() + h.text.slice(1)} <span style="color:var(--muted)">· ${fmt.short(h.at)} ${fmt.time(h.at)}</span></div>`).join('')}</div>
+      </div>
+      <div class="dr-cta"><button class="big">${icon('sparkle', 18)}Ask</button><button class="big go">${icon('check', 18, 2.6)}Mark done</button></div>
+    </section>`;
+  }
+
+  document.getElementById('page').innerHTML = page();
+  if (params.get('screen') === 'detail') { document.getElementById('overlay').innerHTML = drawer(); document.body.style.overflow = 'hidden'; }
+</script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<div class="app">
+  <nav class="rail" [attr.aria-label]="'nav.main' | t">
+    <a class="logo" routerLink="/" [attr.aria-label]="'nav.brand' | t"><app-icon name="school" [size]="20" [stroke]="2" /></a>
+
+    <a class="ri" routerLink="/" [class.on]="section() === 'inbox'" [attr.data-tip]="'nav.inbox' | t" [attr.aria-label]="'nav.inbox' | t">
+      <app-icon name="inbox" [size]="20" />
+      @if (needsUs(); as n) { <span class="ct">{{ n }}</span> }
+    </a>
+    <a class="ri" routerLink="/calendar" [class.on]="section() === 'calendar'" [attr.data-tip]="'nav.calendarPage' | t" [attr.aria-label]="'nav.calendarPage' | t">
+      <app-icon name="calendar" [size]="20" />
+    </a>
+
+    @if (kids.kids().length > 1) {
+      <hr />
+      <button type="button" class="ri kid" [class.on]="!kids.activeKidId()" [attr.aria-pressed]="!kids.activeKidId()"
+        [attr.data-tip]="'nav.allChildren' | t" [attr.aria-label]="'nav.allChildren' | t" (click)="pickKid(null)">
+        <span class="kav all">★</span>
+      </button>
+      @for (k of kids.kids(); track k.id) {
+        <button type="button" class="ri kid" [class.on]="kids.activeKidId() === k.id" [attr.aria-pressed]="kids.activeKidId() === k.id"
+          [attr.data-tip]="'nav.onlyChild' | t: { name: k.name }" [attr.aria-label]="'nav.onlyChild' | t: { name: k.name }" (click)="pickKid(k.id)">
+          <span class="kav" [style.background]="k.color || 'var(--accent)'">{{ k.name.charAt(0) }}</span>
+        </button>
+      }
+    }
+
+    <div class="rail-foot">
+      <ng-container *ngTemplateOutlet="snapButton; context: { $implicit: 'ri act-snap' }" />
+      <button type="button" class="ri act-ask" [class.open]="chat.open()" [attr.aria-pressed]="chat.open()"
+        [attr.data-tip]="'chat.open' | t" [attr.aria-label]="'chat.open' | t" (click)="chat.toggle()">
+        <app-icon name="sparkle" [size]="20" />
+      </button>
+      <hr />
+      <a class="ri" routerLink="/audit" [class.on]="section() === 'audit'" [attr.data-tip]="'nav.audit' | t" [attr.aria-label]="'nav.audit' | t">
+        <app-icon name="audit" [size]="20" />
+      </a>
+      <a class="ri" routerLink="/settings" [class.on]="section() === 'settings'" [attr.data-tip]="'nav.settings' | t" [attr.aria-label]="'nav.settings' | t">
+        <app-icon name="settings" [size]="20" />
+      </a>
+      <a class="ri" routerLink="/settings" [attr.data-tip]="healthLabel()" [attr.aria-label]="healthLabel()">
+        <span class="hdot" [class]="'hdot ' + healthState()"></span>
+      </a>
+      <ng-container *ngTemplateOutlet="account; context: { $implicit: 'rail-account' }" />
+    </div>
+  </nav>
+
+  <div class="main">
+    <header class="m-top">
+      <a class="m-logo" routerLink="/" [attr.aria-label]="'nav.brand' | t"><app-icon name="school" [size]="18" [stroke]="2" /></a>
+      @if (kids.kids().length > 1) {
+        <div class="m-kids" role="group" [attr.aria-label]="'nav.child' | t">
+          <button type="button" [class.on]="!kids.activeKidId()" [attr.aria-pressed]="!kids.activeKidId()" (click)="pickKid(null)"
+            [attr.aria-label]="'nav.allChildren' | t"><span class="kav all">★</span></button>
+          @for (k of kids.kids(); track k.id) {
+            <button type="button" [class.on]="kids.activeKidId() === k.id" [attr.aria-pressed]="kids.activeKidId() === k.id" (click)="pickKid(k.id)"
+              [attr.aria-label]="'nav.onlyChild' | t: { name: k.name }"><span class="kav" [style.background]="k.color || 'var(--accent)'">{{ k.name.charAt(0) }}</span>{{ k.name }}</button>
+          }
+        </div>
+      }
+      <a class="icon-btn m-search" routerLink="/search" [attr.aria-label]="'nav.searchAria' | t"><app-icon name="search" [size]="18" /></a>
+      <ng-container *ngTemplateOutlet="account; context: { $implicit: 'm-account' }" />
+    </header>
+
+    <header class="shell-top">
+      <h1>{{ title() | t }}</h1>
+      @if (bar.template(); as tpl) {
+        <div class="bar-slot"><ng-container *ngTemplateOutlet="tpl" /></div>
+      }
+      <label class="search">
+        <app-icon name="search" [size]="16" />
+        <span class="sr-only">{{ 'nav.searchAria' | t }}</span>
+        <input type="search" [placeholder]="'nav.search' | t" [value]="searchText()" maxlength="200"
+          (input)="queueSearch($event)" (keydown.enter)="search()" />
+      </label>
+    </header>
+
+    @if (health.problems().length) {
+      <div class="health-strip" role="status">
+        <app-icon name="alert" [size]="16" />
+        <span class="strip-label">{{ 'health.problemH' | t }}</span>
+        @for (c of health.problems(); track c.connector) {
+          <a class="dot" [class]="'dot dot-' + c.status" routerLink="/settings" [title]="health.tooltip(c)">{{ c.connector | label }}</a>
+        }
+      </div>
+    }
+
+    <main [class.wide]="wide()">
+      <router-outlet />
+    </main>
+  </div>
+
+  <nav class="tabbar" [attr.aria-label]="'nav.main' | t">
+    <a routerLink="/" [class.on]="section() === 'inbox'">
+      <app-icon name="inbox" [size]="22" />{{ 'nav.inbox' | t }}
+      @if (needsUs(); as n) { <span class="ct">{{ n }}</span> }
+    </a>
+    <a routerLink="/calendar" [class.on]="section() === 'calendar'"><app-icon name="calendar" [size]="22" />{{ 'nav.calendarPage' | t }}</a>
+    <ng-container *ngTemplateOutlet="snapButton; context: { $implicit: 'snap' }" />
+    <button type="button" [class.on]="chat.open()" (click)="chat.toggle()"><app-icon name="sparkle" [size]="22" />{{ 'nav.ask' | t }}</button>
+    <a routerLink="/settings" [class.on]="section() === 'settings'"><app-icon name="settings" [size]="22" />{{ 'nav.settings' | t }}</a>
+  </nav>
+</div>
+
+@if (snapMenu()) {
+  <div class="snap-scrim" (click)="snapMenu.set(false)"></div>
+  <div class="snap-menu" role="dialog" [attr.aria-label]="'snap.which' | t">
+    <strong>{{ 'snap.which' | t }}</strong>
+    @for (k of kids.kids(); track k.id) {
+      <label class="snap-kid">
+        <input type="file" accept="image/*,application/pdf" capture="environment" (change)="uploadPhoto($event, k.id)" />
+        <span class="kav" [style.background]="k.color || 'var(--accent)'">{{ k.name.charAt(0) }}</span>{{ k.name }}
+      </label>
+    }
+  </div>
+}
+
+@if (photoError(); as err) {
+  <div class="toast" role="alert">{{ err }} <button type="button" class="ghost" (click)="photoError.set(null)">×</button></div>
+}
+
+<app-chat-widget #chat />
+
+<ng-template #snapButton let-cls>
+  @if (photoBusy()) {
+    <span [class]="cls + ' busy'" [attr.data-tip]="'inbox.photoBusy' | t" role="status" [attr.aria-label]="'inbox.photoBusy' | t">
+      @if (cls === 'snap') { <span><app-icon name="camera" [size]="24" /></span> } @else { <app-icon name="camera" [size]="20" /> }
+    </span>
+  } @else if (snapKid() !== undefined) {
+    <label [class]="cls" [attr.data-tip]="'snap.tip' | t" [attr.aria-label]="'snap.tip' | t">
+      <input type="file" accept="image/*,application/pdf" capture="environment" (change)="uploadPhoto($event, snapKid())" />
+      @if (cls === 'snap') { <span><app-icon name="camera" [size]="24" /></span> } @else { <app-icon name="camera" [size]="20" /> }
+    </label>
+  } @else {
+    <button type="button" [class]="cls" [attr.data-tip]="'snap.tip' | t" [attr.aria-label]="'snap.tip' | t" (click)="snapMenu.set(true)">
+      @if (cls === 'snap') { <span><app-icon name="camera" [size]="24" /></span> } @else { <app-icon name="camera" [size]="20" /> }
+    </button>
+  }
+</ng-template>
+
+<ng-template #account let-cls>
+  <details [class]="'account ' + cls">
+    <summary [attr.aria-label]="auth.me()?.displayName || 'Account'">{{ initial() }}</summary>
+    <div class="account-pop">
+      <strong>{{ auth.me()?.displayName || auth.me()?.name }}</strong>
+      @if (auth.me()?.name) {
+        <label>
+          {{ 'set.account.language' | t }}
+          <select [value]="i18n.lang()" (change)="changeLanguage($event)">
+            <option value="en">{{ 'nav.langEn' | t }}</option>
+            <option value="es">{{ 'nav.langEs' | t }}</option>
+          </select>
+        </label>
+        <button type="button" class="ghost" (click)="logout()">{{ 'nav.signOut' | t }}</button>
+      }
+    </div>
+  </details>
+</ng-template>

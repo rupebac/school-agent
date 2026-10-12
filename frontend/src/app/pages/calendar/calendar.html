@@ -1,0 +1,115 @@
+<div class="cal-layout">
+  <section class="cal-card">
+    <div class="cal-bar">
+      <button type="button" class="icon-btn" [attr.aria-label]="'cal.prev' | t" [title]="'cal.prev' | t" (click)="prev()"><app-icon name="chevL" [size]="16" /></button>
+      <strong aria-live="polite">{{ monthLabel() }}</strong>
+      <button type="button" class="icon-btn" [attr.aria-label]="'cal.next' | t" [title]="'cal.next' | t" (click)="next()"><app-icon name="chevR" [size]="16" /></button>
+      <button type="button" class="ghost small" (click)="today()">{{ 'cal.today' | t }}</button>
+      <span class="bar-right">
+        @for (k of legendKids(); track k.id) {
+          <span class="kidkey"><span class="kav" [style.background]="k.color || 'var(--accent)'">{{ k.name.charAt(0) }}</span>{{ k.name }}</span>
+        }
+        <label class="tog"><input type="checkbox" [checked]="show().events" (change)="toggle('events')" />{{ 'cal.filter.events' | t }}</label>
+        <label class="tog"><input type="checkbox" [checked]="show().exams" (change)="toggle('exams')" />{{ 'cal.filter.exams' | t }}</label>
+        <label class="tog"><input type="checkbox" [checked]="show().holidays" (change)="toggle('holidays')" />{{ 'cal.filter.holidays' | t }}</label>
+        <label class="tog"><input type="checkbox" [checked]="show().finished" (change)="toggle('finished')" />{{ 'cal.filter.finished' | t }}</label>
+      </span>
+    </div>
+
+    <div class="cgrid" role="group" [attr.aria-label]="'cal.monthAria' | t">
+      @for (wd of i18n.weekdays(); track wd) {
+        <div class="wdh">{{ wd }}</div>
+      }
+      @for (cell of cells(); track cell.key) {
+        @if (!cell.inMonth) {
+          <div class="cell pad"></div>
+        } @else {
+          <div
+            class="cell"
+            [class.we]="cell.weekend"
+            [class.today]="cell.today"
+            [class.sel]="selected() === cell.key"
+            [class.off]="!!offName(cell)"
+            [attr.title]="offName(cell)"
+            (click)="pick(cell.key)"
+          >
+            <button type="button" class="n" [attr.aria-label]="cellLabel(cell)" [attr.aria-pressed]="selected() === cell.key" (click)="pick(cell.key)">{{ cell.day }}</button>
+            @let view = layout(cell);
+            @for (chip of view.shown; track chip.item.caseId) {
+              <a class="ce desk" [class.due]="chip.due" [class.late]="chip.late" [style.--kid]="chip.color" [routerLink]="['/cases', chip.item.caseId]" [title]="chip.label" (click)="$event.stopPropagation()">
+                @if (chip.exam) { <b>{{ 'label.EXAM' | t }}</b> }
+                @if (chip.time) { <b>{{ chip.time }}</b> } @else if (chip.due) { <b>{{ 'cal.due' | t }}</b> }
+                {{ chip.label }}
+              </a>
+            }
+            @if (view.more) { <span class="more desk">+{{ view.more }}</span> }
+            @for (chip of view.labels; track chip.item.caseId) {
+              <span class="ce phone hot" [class.due]="chip.due" [class.late]="chip.late" [style.--kid]="chip.color" [title]="chip.label" lang="de">{{ chip.short }}</span>
+            }
+            @if (view.dots.length || view.phoneMore) {
+              <span class="cdots phone" aria-hidden="true">
+                @for (chip of view.dots; track chip.item.caseId) { <i [style.background]="chip.color"></i> }
+                @if (view.phoneMore) { <b>+{{ view.phoneMore }}</b> }
+              </span>
+            }
+          </div>
+        }
+      }
+      @for (i of trailing(); track i) { <div class="cell pad"></div> }
+    </div>
+
+    @if (auth.isAdmin && schoolCalendar.entries().length === 0) {
+      <p class="cal-hint">
+        {{ 'cal.importHint' | t }}
+        <button type="button" class="ghost small" (click)="importHolidays()">{{ 'cal.import' | t: { year: cursor().getFullYear() } }}</button>
+      </p>
+    }
+  </section>
+
+  <aside class="agenda">
+    <section class="box">
+      <h2 class="box-h">{{ selected() | ldate: 'EEEE d MMMM' }}</h2>
+      <div class="ag-sec">
+        @if (selectedCell(); as day) {
+          @if (offName(day); as off) { <p class="off-banner">{{ 'cal.noSchool' | t }} — {{ off }}</p> }
+        }
+        @for (a of dayAgenda(); track a.caseId) {
+          <a class="ag" [routerLink]="['/cases', a.caseId]">
+            <i class="bar" [style.background]="a.color || 'var(--muted)'"></i>
+            <span><b>{{ a.title }}</b><small>{{ a.child ? a.child + ' · ' : '' }}{{ a.detail }}</small></span>
+          </a>
+        } @empty {
+          @if (!(selectedCell() && offName(selectedCell()!))) { <p class="muted">{{ 'cal.empty' | t }}</p> }
+        }
+      </div>
+    </section>
+
+    <section class="box">
+      <h2 class="box-h">{{ 'cal.comingUp' | t }}</h2>
+      @if (overdue().length) {
+        <div class="ag-sec">
+          <h3 class="late"><app-icon name="alert" [size]="15" [stroke]="2.2" />{{ 'inbox.overdue' | t }}</h3>
+          @for (u of overdue(); track u.caseId) {
+            <a class="ag dated" [routerLink]="['/cases', u.caseId]">
+              <time class="late">{{ u.when | ldate: 'd MMM' }}</time>
+              <span><b>{{ u.title }}</b><small>{{ u.detail }}</small></span>
+            </a>
+          }
+        </div>
+      }
+      @for (g of comingByKid(); track g.id) {
+        <div class="ag-sec">
+          <h3><span class="kav sm" [style.background]="g.color || 'var(--accent)'">{{ g.id === 'shared' ? '★' : g.name.charAt(0) }}</span>{{ g.name }}</h3>
+          @for (u of g.items; track u.caseId) {
+            <a class="ag dated" [routerLink]="['/cases', u.caseId]">
+              <time>{{ u.when | ldate: 'EEE' }}<br />{{ u.when | ldate: 'd MMM' }}</time>
+              <span><b>{{ u.title }}</b>@if (u.detail) {<small>{{ u.detail }}</small>}</span>
+            </a>
+          }
+        </div>
+      } @empty {
+        @if (!overdue().length) { <p class="ag-sec muted">{{ 'cal.nothingAhead' | t }}</p> }
+      }
+    </section>
+  </aside>
+</div>

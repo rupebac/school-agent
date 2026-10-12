@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A · Paper — School Agent mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f6f2ea;
+    --paper: #fffdf8;
+    --ink: #1d2826;
+    --ink-2: #3c4845;
+    --muted: #6f756e;
+    --line: #e5ded0;
+    --line-2: #d8cfbd;
+    --accent: #1f5c4f;
+    --accent-soft: #e3eee9;
+    --late: #b3261e;
+    --late-soft: #fbe9e6;
+    --amber: #9a5b0f;
+    --amber-soft: #fbf0d9;
+    --serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --sans: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .i { flex: none; display: block; }
+
+  /* ---------- top bar ---------- */
+  .top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1180px; margin: 0 auto; padding: 12px 28px; display: flex; align-items: center; gap: 20px; }
+  .brand { font-family: var(--serif); font-size: 1.3rem; font-weight: 600; letter-spacing: -0.02em; display: flex; align-items: center; gap: 9px; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; }
+  .nav { display: flex; gap: 4px; margin-left: 10px; }
+  .nav a { padding: 6px 12px; border-radius: 8px; color: var(--muted); font-weight: 500; font-size: .92rem; }
+  .nav a.on { color: var(--ink); background: var(--paper); box-shadow: 0 0 0 1px var(--line); }
+  .search { flex: 1; max-width: 360px; margin-left: auto; display: flex; align-items: center; gap: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; color: var(--muted); }
+  .search input { border: 0; outline: 0; background: none; font: inherit; flex: 1; min-width: 0; color: var(--ink); }
+  .kbd { font-size: .72rem; border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: #d9cfbd; display: grid; place-items: center; font-weight: 600; font-size: .85rem; color: var(--ink-2); flex: none; }
+
+  /* ---------- layout ---------- */
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 36px 28px 80px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 48px; align-items: start; }
+  .hello .kicker { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .hello h1 { font-family: var(--serif); font-weight: 450; font-size: 2.6rem; line-height: 1.1; letter-spacing: -0.025em; margin: 8px 0 12px; }
+  .hello p { font-size: 1.08rem; color: var(--ink-2); margin: 0; max-width: 36em; }
+  .hello mark { background: var(--late-soft); color: var(--late); padding: 0 4px; border-radius: 4px; font-weight: 600; }
+
+  .kids { display: flex; gap: 8px; margin: 26px 0 0; flex-wrap: wrap; }
+  .kid-pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line-2); background: var(--paper); padding: 5px 14px 5px 5px; border-radius: 999px; font-weight: 500; font-size: .9rem; }
+  .kid-pill.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+  .kid-pill .kav { width: 24px; height: 24px; border-radius: 50%; color: #fff; display: grid; place-items: center; font-size: .72rem; font-weight: 700; }
+  .kid-pill small { color: var(--muted); font-weight: 400; }
+
+  .tabs { display: flex; gap: 26px; margin: 30px 0 6px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tabs button { background: none; border: 0; padding: 10px 0 12px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; display: flex; gap: 7px; align-items: center; }
+  .tabs button.on { color: var(--ink); border-color: var(--ink); }
+  .tabs .n { font-size: .75rem; background: var(--line); border-radius: 999px; padding: 0 7px; color: var(--ink-2); font-weight: 600; }
+  .tabs button.on .n { background: var(--ink); color: var(--paper); }
+
+  .group-h { display: flex; align-items: center; gap: 10px; margin: 30px 0 12px; font-size: .75rem; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .group-h::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .group-h.late { color: var(--late); }
+
+  /* ---------- cards ---------- */
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 20px; padding: 20px 22px; margin-bottom: 12px; transition: border-color .15s, box-shadow .15s; }
+  .card:hover { border-color: var(--line-2); box-shadow: 0 6px 24px -12px rgb(60 45 20 / 25%); }
+  .card.late { border-color: #efc5bf; background: linear-gradient(90deg, var(--late-soft), var(--paper) 30%); }
+  .date { text-align: center; border-right: 1px dashed var(--line-2); padding-right: 18px; }
+  .date .wd { font-size: .7rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .date .dn { font-family: var(--serif); font-size: 2rem; line-height: 1.05; font-weight: 450; }
+  .date .mo { font-size: .75rem; color: var(--muted); }
+  .late .date .wd, .late .date .dn { color: var(--late); }
+  .date.none .dn { color: var(--line-2); }
+  .ctx { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: .8rem; color: var(--muted); }
+  .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink-2); }
+  .who i { width: 8px; height: 8px; border-radius: 50%; }
+  .flag { font-size: .7rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+  .flag.late { background: var(--late); color: #fff; }
+  .flag.must { background: var(--ink); color: var(--paper); }
+  .flag.opt { border: 1px solid var(--line-2); color: var(--muted); }
+  .card h3 { font-family: var(--serif); font-weight: 600; font-size: 1.22rem; line-height: 1.3; letter-spacing: -0.01em; margin: 6px 0 6px; }
+  .card h3 a:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .card p { margin: 0; color: var(--ink-2); }
+  .change { margin-top: 10px !important; display: inline-flex; gap: 8px; align-items: center; background: var(--amber-soft); color: var(--amber) !important; font-size: .85rem; padding: 4px 10px; border-radius: 8px; font-weight: 500; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: .85rem; color: var(--muted); }
+  .meta span { display: inline-flex; align-items: center; gap: 6px; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .ops { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 8px 14px; font-weight: 600; font-size: .88rem; border: 1px solid var(--line-2); background: var(--paper); white-space: nowrap; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.quiet { border-color: transparent; color: var(--muted); padding-inline: 8px; }
+  .done-btn { width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--line-2); background: var(--paper); display: grid; place-items: center; color: var(--muted); }
+  .done-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  .fyi { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .fyi-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; padding: 14px 20px; align-items: center; border-top: 1px solid var(--line); }
+  .fyi-row:first-child { border-top: 0; }
+  .fyi-row .dotw { width: 8px; height: 8px; border-radius: 50%; }
+  .fyi-row strong { font-weight: 600; display: block; }
+  .fyi-row small { color: var(--muted); display: block; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fyi-row.unread strong::after { content: 'New'; margin-left: 8px; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+
+  /* ---------- aside ---------- */
+  aside { position: sticky; top: 90px; display: grid; gap: 18px; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  .panel h4 { margin: 0 0 12px; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 650; display: flex; justify-content: space-between; align-items: center; }
+  .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .cal-head strong { font-family: var(--serif); font-weight: 600; font-size: 1.1rem; }
+  .cal-head .arr { display: flex; gap: 2px; }
+  .cal-head button { background: none; border: 0; padding: 4px; border-radius: 6px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: .82rem; }
+  .grid .wdh { font-size: .68rem; color: var(--muted); font-weight: 600; padding-bottom: 4px; }
+  .grid .c { aspect-ratio: 1; border-radius: 8px; display: grid; place-items: center; position: relative; font-variant-numeric: tabular-nums; }
+  .grid .c.we { color: var(--muted); }
+  .grid .c.off { background: repeating-linear-gradient(135deg, transparent 0 4px, #efe8da 4px 6px); color: var(--muted); }
+  .grid .c.today { background: var(--ink); color: var(--paper); font-weight: 700; }
+  .grid .c .ds { position: absolute; bottom: 3px; display: flex; gap: 2px; }
+  .grid .c .ds i { width: 4px; height: 4px; border-radius: 50%; }
+  .agenda { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; }
+  .ag { display: grid; grid-template-columns: 44px 1fr; gap: 10px; font-size: .88rem; }
+  .ag .when { font-size: .75rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; }
+  .ag b { font-weight: 600; display: block; line-height: 1.3; }
+  .ag small { color: var(--muted); }
+  .snap { display: flex; gap: 14px; align-items: center; background: var(--accent); color: #e9f2ee; border-color: var(--accent); }
+  .snap .ico { width: 44px; height: 44px; border-radius: 12px; background: rgb(255 255 255 / 14%); display: grid; place-items: center; color: #fff; }
+  .snap b { color: #fff; display: block; }
+  .snap small { font-size: .82rem; opacity: .85; }
+  .health { display: grid; gap: 8px; font-size: .86rem; }
+  .health div { display: flex; align-items: center; gap: 8px; }
+  .health i { width: 8px; height: 8px; border-radius: 50%; background: #3b9a6a; }
+  .health .warn i { background: #d69211; }
+  .health small { margin-left: auto; color: var(--muted); font-size: .78rem; }
+
+  /* ---------- detail ---------- */
+  .detail { max-width: 1180px; margin: 0 auto; padding: 28px 28px 110px; }
+  .back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; font-size: .92rem; }
+  .d-head { margin: 22px 0 28px; max-width: 780px; }
+  .d-head .ctx { font-size: .85rem; }
+  .d-head h1 { font-family: var(--serif); font-weight: 500; font-size: 2.5rem; line-height: 1.12; letter-spacing: -0.025em; margin: 12px 0 14px; }
+  .d-head .lede { font-size: 1.1rem; color: var(--ink-2); margin: 0; }
+  .d-ops { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .d-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 40px; align-items: start; }
+  .sec { margin-bottom: 30px; }
+  .sec > h2 { font-family: var(--serif); font-weight: 600; font-size: 1.3rem; letter-spacing: -0.01em; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+  .todo { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .todo-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 16px 18px; border-top: 1px solid var(--line); }
+  .todo-row:first-child { border-top: 0; }
+  .box { width: 24px; height: 24px; border-radius: 7px; border: 1.5px solid var(--line-2); display: grid; place-items: center; color: #fff; }
+  .todo-row.done .box { background: var(--accent); border-color: var(--accent); }
+  .todo-row.done strong { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+  .todo-row small { color: var(--muted); display: block; font-size: .83rem; }
+  .assignee { font-size: .8rem; border: 1px dashed var(--line-2); border-radius: 999px; padding: 3px 10px; color: var(--muted); white-space: nowrap; }
+  .assignee.set { border-style: solid; background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 600; }
+  .bring { display: flex; flex-wrap: wrap; gap: 8px; }
+  .bring span { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font-size: .9rem; display: inline-flex; align-items: center; gap: 8px; }
+  .bring span::before { content: ''; width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line-2); }
+  .when-card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: grid; grid-template-columns: 64px 1fr; gap: 18px; align-items: center; }
+  .when-card .date { border-right: 1px dashed var(--line-2); }
+  .moved { color: var(--amber); font-size: .85rem; font-weight: 500; }
+  .reader { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .reader-tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); background: #fbf8f1; overflow-x: auto; }
+  .reader-tabs button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; font-size: .88rem; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .reader-tabs button.on { background: var(--paper); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+  .reader-body { padding: 22px 26px; font-family: var(--serif); font-size: 1.08rem; line-height: 1.7; color: var(--ink-2); }
+  .reader-body .note { font-family: var(--sans); font-size: .8rem; color: var(--muted); margin-bottom: 10px; display: flex; gap: 6px; align-items: center; }
+  .timeline { position: relative; padding-left: 22px; display: grid; gap: 16px; }
+  .timeline::before { content: ''; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 1.5px; background: var(--line-2); }
+  .tl { position: relative; font-size: .92rem; }
+  .tl::before { content: ''; position: absolute; left: -22px; top: 6px; width: 11px; height: 11px; border-radius: 50%; background: var(--paper); border: 2px solid var(--amber); }
+  .tl small { display: block; color: var(--muted); font-size: .8rem; }
+  .src { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .src:first-of-type { border-top: 0; padding-top: 0; }
+  .src .ic { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+  .src b { font-weight: 600; font-size: .92rem; display: block; line-height: 1.35; word-break: break-word; }
+  .src small { color: var(--muted); font-size: .8rem; }
+  .hist { display: grid; gap: 10px; font-size: .86rem; }
+  .hist div { display: grid; grid-template-columns: 70px 1fr; gap: 10px; }
+  .hist time { color: var(--muted); font-size: .78rem; }
+  .fb { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fb button { border: 1px solid var(--line-2); background: var(--paper); border-radius: 999px; padding: 5px 12px; font-size: .82rem; }
+  .sticky-ops { display: none; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1020px) {
+    .wrap, .d-grid { grid-template-columns: minmax(0, 1fr); }
+    aside { position: static; }
+    .nav { display: none; }
+  }
+  @media (max-width: 680px) {
+    body { font-size: 15px; }
+    .top-in { padding: 10px 16px; gap: 12px; }
+    .brand span:last-child { display: none; }
+    .search { max-width: none; }
+    .kbd { display: none; }
+    .wrap { padding: 22px 16px 90px; gap: 24px; }
+    .hello h1 { font-size: 2rem; }
+    .hello p { font-size: 1rem; }
+    .kids { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .kid-pill small { display: none; }
+    .tabs { gap: 20px; }
+    .card { grid-template-columns: 48px minmax(0, 1fr); gap: 14px; padding: 16px; border-radius: 14px; }
+    .date { padding-right: 12px; }
+    .date .dn { font-size: 1.6rem; }
+    .card h3 { font-size: 1.1rem; }
+    .ops { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 12px; margin-top: -2px; }
+    .done-btn { width: auto; height: auto; border-radius: 10px; padding: 8px 14px; gap: 6px; display: inline-flex; font-weight: 600; font-size: .88rem; color: var(--accent); border-color: var(--accent); }
+    .done-btn::after { content: 'Done'; }
+    .fyi-row { padding: 12px 16px; }
+    .detail { padding: 18px 16px 120px; }
+    .d-head h1 { font-size: 1.85rem; }
+    .d-head .lede { font-size: 1rem; }
+    .d-ops { display: none; }
+    .reader-body { padding: 18px; font-size: 1rem; }
+    .todo-row { grid-template-columns: 26px minmax(0, 1fr); padding: 14px; }
+    .todo-row .assignee { grid-column: 2; justify-self: start; }
+    .sticky-ops { display: flex; gap: 10px; position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(10px); border-top: 1px solid var(--line); z-index: 10; }
+    .sticky-ops .btn { flex: 1; justify-content: center; padding: 12px; }
+    .sticky-ops .btn.icon { flex: none; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="?"><span class="brand-mark" id="bm"></span><span>School Agent</span></a>
+    <nav class="nav"><a class="on" href="?">Inbox</a><a href="#">Calendar</a><a href="#">Settings</a></nav>
+    <label class="search"><span id="si"></span><input placeholder="Search letters, dates, people…" /><span class="kbd">/</span></label>
+    <span class="avatar">R</span>
+  </div>
+</header>
+<div id="app"></div>
+
+<script src="data.js"></script>
+<script src="icons.js"></script>
+<script>
+  const { items, kids, fmt, kid, counts, detail, health, monthCells, params } = MOCK;
+  document.getElementById('bm').innerHTML = icon('school', 17, 2);
+  document.getElementById('si').innerHTML = icon('search', 16);
+  let tab = 'now';
+
+  function dateBlock(it) {
+    const iso = MOCK.dateOf(it);
+    if (!iso) return `<div class="date none"><div class="wd">—</div><div class="dn">·</div><div class="mo">no date</div></div>`;
+    return `<div class="date"><div class="wd">${fmt.wd(iso)}</div><div class="dn">${fmt.day(iso)}</div><div class="mo">${fmt.mon(iso)}</div></div>`;
+  }
+
+  function card(it) {
+    const k = kid(it.kid);
+    const a = it.action, e = it.event;
+    const flag = it.overdue ? '<span class="flag late">Overdue</span>' : a ? (a.must ? '<span class="flag must">Must do</span>' : '<span class="flag opt">Optional</span>') : '';
+    return `<article class="card ${it.overdue ? 'late' : ''}">
+      ${dateBlock(it)}
+      <div>
+        <div class="ctx"><span class="who"><i style="background:${k.color}"></i>${k.name}</span>${flag}<span>${it.source.type} · ${fmt.ago(it.source.date)}</span></div>
+        <h3><a href="?screen=detail">${it.title}</a></h3>
+        <p>${it.summary}</p>
+        ${it.change ? `<p class="change">${icon('bell', 14)}Updated · ${it.change}</p>` : ''}
+        <div class="meta">
+          ${a ? `<span>${icon('clock', 15)}Due <b>${fmt.rel(a.due)}</b></span>` : ''}
+          ${a?.payment ? `<span>${icon('euro', 15)}<b>${a.payment}</b></span>` : ''}
+          ${e ? `<span>${icon('calendar', 15)}${fmt.wdShort(e.date)}${e.time ? ' · ' + e.time : ''}</span>` : ''}
+          ${e?.location ? `<span>${icon('pin', 15)}${e.location}</span>` : ''}
+          ${a?.form ? `<span style="color:var(--accent);font-weight:600">${icon('external', 15)}Open form</span>` : ''}
+        </div>
+      </div>
+      <div class="ops">${a ? `<button class="done-btn" title="Mark done">${icon('check', 20, 2.2)}</button>` : `<a class="btn quiet" href="?screen=detail">Open ${icon('arrowRight', 15)}</a>`}</div>
+    </article>`;
+  }
+
+  function fyiList(list) {
+    return `<div class="fyi">${list.map((it) => {
+      const k = kid(it.kid);
+      return `<a class="fyi-row ${it.unread ? 'unread' : ''}" href="?screen=detail"><i class="dotw" style="background:${k.color}"></i>
+        <span style="min-width:0"><strong>${it.title}</strong><small>${k.name} · ${it.summary}</small></span>
+        <span style="color:var(--muted)">${icon('chevR', 16)}</span></a>`;
+    }).join('')}</div>`;
+  }
+
+  function feed() {
+    const open = items.filter((i) => i.bucket === 'now');
+    if (tab === 'now') {
+      const late = open.filter((i) => i.overdue);
+      const week = open.filter((i) => !i.overdue && MOCK.dayDiff(MOCK.dateOf(i)) <= 7);
+      const later = open.filter((i) => !i.overdue && MOCK.dayDiff(MOCK.dateOf(i)) > 7);
+      const noted = items.filter((i) => i.bucket === 'noted');
+      return `${late.length ? `<div class="group-h late">Overdue</div>${late.map(card).join('')}` : ''}
+        <div class="group-h">This week</div>${week.map(card).join('')}
+        <div class="group-h">Later</div>${later.map(card).join('')}
+        <div class="group-h">Just so you know</div>${fyiList(noted)}`;
+    }
+    if (tab === 'coming') {
+      const ev = items.filter((i) => i.event && i.bucket !== 'done').sort((a, b) => a.event.date.localeCompare(b.event.date));
+      return `<div class="group-h">Coming up</div>${ev.map(card).join('')}`;
+    }
+    if (tab === 'noted') return `<div class="group-h">Information only</div>${fyiList(items.filter((i) => i.bucket === 'noted'))}`;
+    if (tab === 'done') return `<div class="group-h">Done recently</div>${fyiList(items.filter((i) => i.bucket === 'done'))}`;
+    return `<div class="group-h">Everything</div>${items.map(card).join('')}`;
+  }
+
+  function calendar() {
+    const cells = monthCells(2026, 8);
+    return `<div class="panel">
+      <div class="cal-head"><strong>September 2026</strong><span class="arr"><button>${icon('chevL', 16)}</button><button>${icon('chevR', 16)}</button></span></div>
+      <div class="grid">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w) => `<div class="wdh">${w}</div>`).join('')}
+      ${cells.map((c) => c ? `<div class="c ${c.today ? 'today' : ''} ${c.weekend ? 'we' : ''} ${c.off ? 'off' : ''}">${c.n}<span class="ds">${c.items.slice(0, 3).map((it) => `<i style="background:${kid(it.kid).color}"></i>`).join('')}</span></div>` : '<div></div>').join('')}
+      </div>
+      <div class="agenda">
+        ${items.filter((i) => i.event && i.bucket !== 'done').sort((a, b) => a.event.date.localeCompare(b.event.date)).slice(0, 4).map((it) => `
+          <div class="ag"><span class="when">${fmt.wd(it.event.date)}<br>${fmt.day(it.event.date)}</span><span><b>${it.title}</b><small>${kid(it.kid).name}${it.event.time ? ' · ' + it.event.time : ''}</small></span></div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  function inbox() {
+    const firstKid = kids.map((k) => `<button class="kid-pill"><span class="kav" style="background:${k.color}">${k.name[0]}</span>${k.name} <small>${k.klass}</small></button>`).join('');
+    return `<div class="wrap">
+      <section>
+        <div class="hello">
+          <div class="kicker">Tuesday, 29 September</div>
+          <h1>Good morning, Morgan.</h1>
+          <p><b>${counts.now} things</b> need you. <mark>Mia’s lunch fees are overdue</mark>, and Jamie’s Wandertag slip is due Friday. Two new notes are just for information.</p>
+        </div>
+        <div class="kids"><button class="kid-pill on"><span class="kav" style="background:var(--ink)">★</span>Everyone</button>${firstKid}</div>
+        <div class="tabs" id="tabs">
+          ${[['now', 'Needs us', counts.now], ['coming', 'Coming up', counts.coming], ['noted', 'Info', counts.noted], ['done', 'Done', ''], ['all', 'All', '']].map(([k, l, n]) =>
+            `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}${n !== '' ? `<span class="n">${n}</span>` : ''}</button>`).join('')}
+        </div>
+        <div id="feed">${feed()}</div>
+      </section>
+      <aside>
+        <div class="panel snap"><span class="ico">${icon('camera', 22)}</span><span><b>Snap a letter</b><small>Photo or PDF from the school bag</small></span></div>
+        ${calendar()}
+        <div class="panel"><h4>Connections <span style="color:#3b9a6a;letter-spacing:0;text-transform:none;font-weight:600">All good</span></h4>
+          <div class="health">${health.map((h) => `<div class="${h.status}"><i></i>${h.name}<small>${h.note}</small></div>`).join('')}</div></div>
+      </aside>
+    </div>`;
+  }
+
+  function detailView() {
+    const d = detail, k = kid(d.kid), e = d.events[0];
+    return `<div class="detail">
+      <a class="back" href="?">${icon('arrowLeft', 16)} Inbox</a>
+      <header class="d-head">
+        <div class="ctx"><span class="who"><i style="background:${k.color}"></i>${k.name} · ${k.klass}</span><span class="flag must">Needs us</span><span>Opened ${fmt.short(d.opened)}</span></div>
+        <h1>${d.title}</h1>
+        <p class="lede">${d.summary}</p>
+        <div class="d-ops">
+          <button class="btn primary">${icon('check', 16, 2.2)} Mark all done</button>
+          <button class="btn">${icon('sparkle', 16)} Ask about this</button>
+          <button class="btn">${icon('bellOff', 16)} Mute WhatsApp</button>
+          <button class="btn quiet">${icon('more', 18)}</button>
+        </div>
+      </header>
+      <div class="d-grid">
+        <div>
+          <section class="sec"><h2>What you need to do</h2>
+            <div class="todo">${d.actions.map((a) => `<div class="todo-row ${a.done ? 'done' : ''}">
+              <span class="box">${a.done ? icon('check', 14, 3) : ''}</span>
+              <span><strong>${a.title}</strong><small>${a.done ? 'Done' : `Due ${fmt.wdShort(a.due)} · ${a.must ? 'Required' : 'Optional'}`}</small></span>
+              <span class="assignee ${a.who ? 'set' : ''}">${a.who ?? '+ Take it'}</span></div>`).join('')}</div>
+          </section>
+          <section class="sec"><h2>Jamie needs to bring</h2><div class="bring">${d.needs.map((n) => `<span>${n}</span>`).join('')}</div></section>
+          <section class="sec"><h2>When &amp; where</h2>
+            <div class="when-card"><div class="date"><div class="wd">${fmt.wd(e.date)}</div><div class="dn">${fmt.day(e.date)}</div><div class="mo">${fmt.mon(e.date)}</div></div>
+              <div><b style="font-size:1.05rem">${e.title}</b><div style="color:var(--ink-2)">${e.time} – ${e.end} · ${e.location}</div><div class="moved">Moved — ${e.note}</div></div></div>
+          </section>
+          <section class="sec"><h2>What the school sent</h2>
+            <div class="reader"><div class="reader-tabs"><button class="on">Summary</button><button>English translation</button><button>Original (German)</button></div>
+              <div class="reader-body"><div class="note">${icon('translate', 14)} Translated from German · Elternbrief Wandertag 7b.pdf, page 1</div>${d.translation}</div></div>
+          </section>
+          <section class="sec"><h2>What changed</h2>
+            <div class="timeline">${d.changes.map((c) => `<div class="tl">${c.text}<small>${fmt.wdShort(c.at)} · ${fmt.time(c.at)} · from ${c.from}</small></div>`).join('')}</div>
+          </section>
+        </div>
+        <aside style="top:90px">
+          <div class="panel"><h4>Where this came from</h4>${d.sources.map((s) => `<div class="src"><span class="ic">${icon(s.type === 'Email' ? 'mail' : 'file', 18)}</span><span><b>${s.title}</b><small>${s.type} · ${s.sender} · ${fmt.short(s.date)}${s.pages ? ` · ${s.pages} pages` : ''}</small></span></div>`).join('')}</div>
+          <div class="panel"><h4>History</h4><div class="hist">${d.history.map((h) => `<div><time>${fmt.short(h.at)}<br>${fmt.time(h.at)}</time><span><b>${h.who}</b> — ${h.text}</span></div>`).join('')}</div></div>
+          <div class="panel"><h4>Was this right?</h4><div class="fb"><button>👍 Yes</button><button>Wrong date</button><button>Not important</button><button>Wrong child</button></div></div>
+        </aside>
+      </div>
+      <div class="sticky-ops"><button class="btn icon">${icon('sparkle', 18)}</button><button class="btn primary">${icon('check', 16, 2.2)} Mark all done</button></div>
+    </div>`;
+  }
+
+  function render() {
+    document.getElementById('app').innerHTML = params.get('screen') === 'detail' ? detailView() : inbox();
+    document.querySelectorAll('#tabs button').forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(); });
+  }
+  render();
+</script>
+</body>
+</html>

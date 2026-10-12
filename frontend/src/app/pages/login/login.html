@@ -1,0 +1,27 @@
+<div class="login-wrap">
+  <form class="card login-card" (ngSubmit)="submit()" #f="ngForm">
+    <h1>{{ 'nav.brand' | t }}</h1>
+    <p class="hint">{{ 'login.hint' | t }}</p>
+
+    <label>
+      {{ 'login.user' | t }}
+      <input name="user" [(ngModel)]="user" autocomplete="username" required />
+    </label>
+    <label>
+      {{ 'login.password' | t }}
+      <input name="password" type="password" [(ngModel)]="password" autocomplete="current-password" required />
+    </label>
+
+    @if (error(); as msg) {
+      <p class="error">{{ msg }}</p>
+    }
+
+    <label class="remember">
+      <input type="checkbox" name="remember" [(ngModel)]="remember" /> {{ 'login.remember' | t }}
+    </label>
+
+    <button type="submit" [disabled]="busy() || f.invalid">
+      {{ busy() ? ('login.busy' | t) : ('login.submit' | t) }}
+    </button>
+  </form>
+</div>

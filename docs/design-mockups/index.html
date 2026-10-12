@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>School Agent — redesign mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e9ebef; color: #111827; font: 15px/1.55 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+  a { color: #4338ca; }
+  header { max-width: 1400px; margin: 0 auto; padding: 40px 28px 8px; }
+  header h1 { margin: 0; font-size: 2rem; letter-spacing: -0.03em; }
+  header p { color: #4b5563; max-width: 58em; margin: 8px 0 0; }
+  .jump { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .jump a { background: #fff; border-radius: 999px; padding: 7px 14px; text-decoration: none; color: #111827; font-weight: 600; font-size: .9rem; box-shadow: 0 1px 2px rgb(0 0 0 / 6%); }
+  section { max-width: 1400px; margin: 28px auto; padding: 28px; background: #fff; border-radius: 24px; box-shadow: 0 1px 3px rgb(0 0 0 / 6%); }
+  @media (min-width: 1456px) { section { margin-inline: auto; } }
+  .sh { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-start; margin-bottom: 22px; }
+  .sh h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; }
+  .sh h2 small { display: block; font-size: .9rem; color: #6b7280; font-weight: 500; letter-spacing: 0; }
+  .sh .desc { flex: 1; min-width: 280px; color: #374151; }
+  .sh .desc p { margin: 0 0 8px; }
+  .pc { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 22px; font-size: .88rem; }
+  .pc b { display: block; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: #6b7280; }
+  .pc ul { margin: 4px 0 0; padding-left: 18px; }
+  .open { display: flex; gap: 8px; flex-wrap: wrap; }
+  .open a { font-size: .85rem; font-weight: 600; border: 1px solid #d1d5db; border-radius: 10px; padding: 6px 12px; text-decoration: none; color: #111827; white-space: nowrap; }
+  .shots { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+  figure { margin: 0; flex: none; }
+  figcaption { font-size: .78rem; font-weight: 600; color: #6b7280; margin-top: 8px; text-transform: uppercase; letter-spacing: .06em; }
+  .frame { position: relative; overflow: hidden; border-radius: 14px; box-shadow: 0 0 0 1px #e5e7eb, 0 12px 30px -16px rgb(0 0 0 / 35%); background: #f3f4f6; }
+  .frame iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; }
+  .desk { width: 720px; height: 450px; }
+  .desk iframe { width: 1440px; height: 900px; transform: scale(.5); }
+  .phone { width: 234px; height: 506px; border-radius: 26px; box-shadow: 0 0 0 6px #111827, 0 16px 30px -12px rgb(0 0 0 / 45%); }
+  .phone iframe { width: 390px; height: 844px; transform: scale(.6); }
+  .note { max-width: 1400px; margin: 0 auto 60px; padding: 0 28px; color: #4b5563; font-size: .9rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>School Agent — redesign mockups</h1>
+  <p>Design directions built with the same fake data (Jamie in 7b, Mia in 3a, a dozen letters). Each shows the <b>inbox</b> and the
+    <b>case detail</b> on desktop and phone. They are live HTML, so scroll inside the frames or open any of them full size and resize the window.
+    Nothing has been changed in the real app.</p>
+  <div class="jump"><a href="#e" style="background:#4f46e5;color:#fff">E · Combined (new)</a><a href="#a">A · Paper</a><a href="#b">B · Control Center</a><a href="#c">C · Timeline</a><a href="#d">D · Night board</a></div>
+</header>
+
+<div id="list"></div>
+<p class="note">Mix and match is possible, e.g. B’s layout with A’s typography, or C’s week strip on top of any of the others. Tell me which one (or which parts) to apply.</p>
+
+<script>
+  const V = [
+    {
+      id: 'e', file: 'e-control-kids.html', name: 'E · Control Center + kids', sub: 'B’s layout, with D’s per-child separation',
+      desc: 'Control Center with a slim icon rail on the left (pages at the top: Inbox, Calendar, then the child filters; actions at the bottom: Snap a letter and <b>Ask</b>, which opens the assistant as an overlay, then Audit, Settings and a connection dot; hover for labels). The inbox shows <b>one lane per child</b>, each split into <i>Overdue / Due within 7 days / Later / Just info</i>, with importance bars coloured by level. Items for both kids (holidays) sit in a strip above. The <b>By child / Together</b> switch changes to one mixed list with a child avatar per row, like B. Opening a case shows it next to the lanes on wide screens, as a drawer on tablets and full screen on phones. <b>Calendar</b> (second icon) shows 6 weeks with entries coloured by child, school holidays hatched, and an agenda split by child. Add <code>?screen=calendar</code> to the file name to open it directly.',
+      pros: ['Both kids clearly separated, same groups in each lane', 'Can switch to one mixed list', 'Calendar is its own full screen'],
+      cons: ['Two lanes plus an open case need about 1300 px; below that the case opens as a drawer'],
+      extra: [['?screen=calendar', 'Desktop · Calendar', 'desk'], ['?screen=calendar', 'Phone · Calendar', 'phone'], ['?view=together', 'Desktop · Together view', 'desk'], ['?ask=1', 'Desktop · Assistant open', 'desk'], ['?ask=1', 'Phone · Assistant open', 'phone']],
+    },
+    {
+      id: 'a', file: 'a-paper.html', name: 'A · Paper', sub: 'Calm, editorial, warm',
+      desc: 'Reads like a well-set family newsletter: a serif headline greeting with a one-sentence digest, items grouped by <i>Overdue / This week / Later</i> with a big date block on each card, and a quiet sidebar with the month calendar and connection health. Closest in spirit to today’s green palette, just much more polished.',
+      pros: ['Very readable, low stress', 'The digest sentence answers “what now?” at a glance', 'Smallest change for the family'],
+      cons: ['Less dense, so more scrolling', 'Serif typeface is a matter of taste'],
+    },
+    {
+      id: 'b', file: 'b-control.html', name: 'B · Control Center', sub: 'App-like, dense, master–detail',
+      desc: 'Mail-client layout: dark sidebar (navigation, children, connection health), a compact list with priority bars and at-a-glance tags (€, Form, Changed), and the case open alongside without leaving the list. On phones it becomes a native-feeling app with a bottom tab bar and a big camera button.',
+      pros: ['Fastest for triaging many letters', 'Detail next to the list means no back-and-forth', 'Phone version feels like a real app'],
+      cons: ['Busier, more “work tool” than family tool', 'Three columns need a wide screen (it collapses on tablets)'],
+    },
+    {
+      id: 'c', file: 'c-timeline.html', name: 'C · Timeline', sub: 'Agenda-first, friendly, rounded',
+      desc: 'Everything is placed on the day it matters (due date or event date) on a vertical timeline, with a navy hero showing a 14-day strip with dots per child. Overdue items are pinned in a “Catch up first” box. Information-only notes and the assistant sit in a side column. Details open as a drawer (desktop) or bottom sheet (phone) without losing your place.',
+      pros: ['Answers “what’s happening when?” best', 'Drawer and sheet keep context and scroll position', 'Assistant is visible, not hidden in a bubble'],
+      cons: ['Undated items need their own place', 'Rounded, colourful style may feel less serious'],
+    },
+    {
+      id: 'd', file: 'd-night.html', name: 'D · Night board', sub: 'Dark mode, one column per child',
+      desc: 'A dark dashboard: the single most urgent item is a spotlight card with its main action (e.g. open the payment form), next to a 7-day overview. Below is a board with one column per child plus Family, each with a monthly progress ring. On phones you switch between children with avatar tabs and a floating dock. Detail shows a countdown ring to the deadline.',
+      pros: ['Great per-child overview', 'The spotlight makes the next step obvious', 'Easy on the eyes at night'],
+      cons: ['Dark-only as designed (light variant would be extra work)', 'Columns with few items leave empty space'],
+    },
+  ];
+  document.getElementById('list').innerHTML = V.map((v) => `
+    <section id="${v.id}">
+      <div class="sh">
+        <h2>${v.name}<small>${v.sub}</small></h2>
+        <div class="desc"><p>${v.desc}</p>
+          <div class="pc"><div><b>Good</b><ul>${v.pros.map((p) => `<li>${p}</li>`).join('')}</ul></div><div><b>Trade-offs</b><ul>${v.cons.map((p) => `<li>${p}</li>`).join('')}</ul></div></div></div>
+        <div class="open"><a href="${v.file}" target="_blank">Open inbox ↗</a><a href="${v.file}?screen=detail" target="_blank">Open detail ↗</a>${v.extra ? `<a href="${v.file}?screen=calendar" target="_blank">Open calendar ↗</a>` : ''}</div>
+      </div>
+      <div class="shots">
+        <figure><div class="frame desk"><iframe loading="lazy" src="${v.file}" title="${v.name} desktop inbox"></iframe></div><figcaption>Desktop · Inbox</figcaption></figure>
+        <figure><div class="frame phone"><iframe loading="lazy" src="${v.file}" title="${v.name} phone inbox"></iframe></div><figcaption>Phone · Inbox</figcaption></figure>
+        <figure><div class="frame phone"><iframe loading="lazy" src="${v.file}?screen=detail" title="${v.name} phone detail"></iframe></div><figcaption>Phone · Detail</figcaption></figure>
+        <figure><div class="frame desk"><iframe loading="lazy" src="${v.file}?screen=detail" title="${v.name} desktop detail"></iframe></div><figcaption>Desktop · Detail</figcaption></figure>
+        ${(v.extra ?? []).map(([qs, cap, cls]) => `<figure><div class="frame ${cls}"><iframe loading="lazy" src="${v.file}${qs}" title="${v.name} ${cap}"></iframe></div><figcaption>${cap}</figcaption></figure>`).join('')}
+      </div>
+    </section>`).join('');
+</script>
+</body>
+</html>

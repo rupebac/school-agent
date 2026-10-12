@@ -1,0 +1,44 @@
+<label class="m-search-box">
+  <app-icon name="search" [size]="18" />
+  <span class="sr-only">{{ 'nav.searchAria' | t }}</span>
+  <input #box type="search" enterkeyhint="search" [placeholder]="'nav.search' | t" [value]="q()" maxlength="200"
+    (input)="queue($event)" (keydown.enter)="submit(box.value)" />
+</label>
+
+@if (q().trim()) {
+  <header class="page-head">
+    <h1>{{ 'search.title' | t: { q: q() } }}</h1>
+  </header>
+}
+
+@if (q().trim().length < 2) {
+  <p class="muted">{{ 'search.hint' | t }}</p>
+} @else if (loading()) {
+  <p class="muted">{{ 'search.busy' | t }}</p>
+} @else if (failed()) {
+  <div class="card empty-hero" role="alert">
+    <h2>{{ 'search.error' | t }}</h2>
+    <button type="button" (click)="retry()">{{ 'search.retry' | t }}</button>
+  </div>
+} @else if (hits().length === 0) {
+  <div class="card empty-hero">
+    <h2>{{ 'search.empty' | t }}</h2>
+  </div>
+} @else {
+  @if (hits().length >= 50) { <p class="muted">{{ 'search.limit' | t }}</p> }
+  <div class="item-list">
+    @for (h of hits(); track h.caseId) {
+        <a class="card item-card" [class.important]="hot(h.score)" [routerLink]="['/cases', h.caseId]">
+        <span class="title">{{ h.title }}</span>
+        <div class="meta">
+          <app-importance [score]="h.score" />
+          @if (showTag(h.status)) {
+            <span class="tag" [class]="tone(h.status)">{{ h.status | consequence }}</span>
+          }
+
+        </div>
+        @if (h.match !== h.title) { <p class="snippet">{{ h.match }}</p> }
+      </a>
+    }
+  </div>
+}

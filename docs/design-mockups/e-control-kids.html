@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>E · Control Center + kid lanes — School Agent mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f4f5f8;
+    --panel: #ffffff;
+    --rail: #111827;
+    --rail-2: #1f2937;
+    --rail-text: #9ca3af;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --muted: #64748b;
+    --line: #e5e7eb;
+    --line-2: #d6dae1;
+    --accent: #4f46e5;
+    --accent-soft: #eef0ff;
+    --red: #dc2626; --red-soft: #fef2f2;
+    --orange: #ea580c;
+    --amber: #d97706; --amber-soft: #fffbeb;
+    --green: #16a34a; --green-soft: #f0fdf4;
+    --font: 'Geist', 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+  .i { flex: none; display: block; }
+
+  .app { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: 100vh; }
+
+  /* ---------- icon rail ---------- */
+  .rail { background: var(--rail); color: var(--rail-text); display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 4px; z-index: 20; }
+  .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, #6366f1, #a855f7); display: grid; place-items: center; color: #fff; margin-bottom: 14px; }
+  .ri { position: relative; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; }
+  .ri:hover { background: var(--rail-2); color: #e5e7eb; }
+  .ri.on { background: var(--rail-2); color: #fff; }
+  .ri.on::before { content: ''; position: absolute; left: -14px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: #818cf8; }
+  .ri .ct { position: absolute; top: 4px; right: 3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--accent); color: #fff; font-size: .66rem; font-weight: 700; display: grid; place-items: center; border: 2px solid var(--rail); }
+  .ri[data-tip]:hover::after { content: attr(data-tip); position: absolute; left: 54px; top: 50%; transform: translateY(-50%); background: #0b1020; color: #fff; font-size: .78rem; font-weight: 600; padding: 5px 9px; border-radius: 7px; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px -6px rgb(0 0 0 / 50%); }
+  .rail hr { width: 28px; border: 0; border-top: 1px solid var(--rail-2); margin: 10px 0; }
+  .kav { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; font-size: .78rem; font-weight: 700; }
+  .ri.kid.on { background: none; }
+  .ri.kid.on .kav { box-shadow: 0 0 0 2px var(--rail), 0 0 0 4px #e5e7eb; }
+  .rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .rail-foot hr { margin: 4px 0; }
+  .ri.act-snap { border: 1.5px dashed #4b5563; color: #d1d5db; }
+  .ri.act-snap:hover { border-color: #9ca3af; }
+  .ri.act-ask { background: linear-gradient(135deg, #6366f1, #a855f7); color: #fff; box-shadow: 0 6px 16px -6px rgb(139 92 246 / 70%); }
+  .ri.act-ask:hover { background: linear-gradient(135deg, #6366f1, #a855f7); filter: brightness(1.1); }
+  .ri.act-ask.open { box-shadow: 0 0 0 2px var(--rail), 0 0 0 4px #c4b5fd; }
+
+  /* assistant overlay (opens from the rail, not a page) */
+  .ask-scrim { display: none; }
+  .ask-pop { position: fixed; left: 84px; bottom: 16px; width: 400px; height: min(600px, calc(100vh - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px -16px rgb(15 23 42 / 40%); z-index: 40; display: flex; flex-direction: column; overflow: hidden; }
+  .ask-h { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; align-items: center; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--line); }
+  .ask-h .ask-logo { grid-row: span 2; width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg, #6366f1, #a855f7); color: #fff; display: grid; place-items: center; }
+  .ask-h b { font-weight: 650; line-height: 1.2; }
+  .ask-h small { grid-column: 2; color: var(--muted); font-size: .75rem; line-height: 1.2; }
+  .ask-h .icon-btn { grid-column: 3; grid-row: 1 / span 2; }
+  .ask-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; background: #fafbfc; }
+  .msg { max-width: 88%; padding: 10px 12px; border-radius: 14px; font-size: .9rem; }
+  .msg.mine { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .msg ul { margin: 6px 0 0; padding-left: 18px; }
+  .cites { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .cite { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 600; background: var(--bg); color: var(--ink-2); padding: 2px 7px; border-radius: 6px; }
+  .cite.link { background: var(--accent-soft); color: var(--accent); }
+  .ask-foot { padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+  .sugg { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
+  .sugg button { font-size: .78rem; font-weight: 550; background: var(--bg); border-radius: 999px; padding: 4px 10px; white-space: nowrap; color: var(--ink-2); }
+  .ask-in { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line-2); border-radius: 12px; padding: 5px 5px 5px 12px; }
+  .ask-in input { flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; }
+  .hdot { width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 4px rgb(245 158 11 / 20%); }
+  .me { width: 34px; height: 34px; border-radius: 50%; background: #374151; color: #e5e7eb; display: grid; place-items: center; font-weight: 600; }
+
+  /* ---------- main ---------- */
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .topbar { display: flex; align-items: center; gap: 18px; padding: 14px 20px 0; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .topbar h1 { margin: 0; font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; padding-bottom: 12px; }
+  .seg { display: flex; gap: 18px; overflow-x: auto; scrollbar-width: none; }
+  .seg button { padding: 4px 0 12px; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .seg button.on { color: var(--ink); border-color: var(--accent); }
+  .seg sup { font-size: .68rem; font-weight: 600; color: var(--muted); margin-left: 2px; }
+  .tb-right { margin-left: auto; display: flex; align-items: center; gap: 10px; padding-bottom: 10px; }
+  .search { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 9px; padding: 7px 10px; color: var(--muted); width: 280px; }
+  .search input { border: 0; outline: 0; background: none; font: inherit; flex: 1; min-width: 0; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--muted); border: 1px solid var(--line); background: var(--panel); flex: none; }
+  .legend { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--muted); white-space: nowrap; }
+
+  .work { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+  .work.has-pane { grid-template-columns: minmax(0, 1fr) minmax(420px, 44%); }
+  .scroll { overflow-y: auto; min-height: 0; padding: 16px 20px 40px; }
+
+  /* family strip */
+  .family { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .family .lab { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: .85rem; }
+  .family .lab .kav { width: 24px; height: 24px; border-radius: 7px; background: #64748b; font-size: .7rem; }
+  .fitem { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; background: var(--bg); border-radius: 9px; padding: 5px 10px; min-width: 0; }
+  .fitem b { font-weight: 600; }
+  .fitem span { color: var(--muted); }
+
+  /* ---------- lanes ---------- */
+  .lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .lanes.single { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+  .lane { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; border-top: 4px solid var(--kid); }
+  .lane-h { display: flex; align-items: center; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--kid-soft), var(--panel)); }
+  .lane-h .kav { width: 38px; height: 38px; border-radius: 11px; font-size: .95rem; background: var(--kid); }
+  .lane-h b { display: block; font-size: 1.05rem; font-weight: 650; line-height: 1.2; }
+  .lane-h small { color: var(--muted); font-size: .8rem; }
+  .lstats { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .lstat { font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+  .lstat.red { background: var(--red-soft); border-color: #fecaca; color: var(--red); }
+  .gl { padding: 12px 16px 4px; font-size: .68rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; }
+  .gl.red { color: var(--red); }
+  .row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; padding: 11px 16px; border-left: 3px solid transparent; position: relative; }
+  .row:hover { background: #fafbfc; }
+  .row.sel { background: var(--accent-soft); border-left-color: var(--accent); }
+  .row.late { background: linear-gradient(90deg, var(--red-soft), transparent 60%); }
+  .row.late.sel { background: var(--accent-soft); }
+  .kind { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--bg); color: var(--ink-2); }
+  .kind.k-pay { background: var(--green-soft); color: var(--green); }
+  .kind.k-ev { background: var(--accent-soft); color: var(--accent); }
+  .kind.k-late { background: var(--red-soft); color: var(--red); }
+  .kind.kid { color: #fff; font-weight: 700; font-size: .8rem; }
+  .row .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .s { color: var(--muted); font-size: .84rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .row .tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--bg); color: var(--ink-2); white-space: nowrap; }
+  .pill.red { background: var(--red-soft); color: var(--red); }
+  .pill.amber { background: var(--amber-soft); color: var(--amber); }
+  .pill.indigo { background: var(--accent-soft); color: var(--accent); }
+  .pill.green { background: var(--green-soft); color: var(--green); }
+  .rt { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .due { font-size: .78rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .due.red { color: var(--red); } .due.amber { color: var(--amber); }
+  .prio { display: flex; gap: 2px; }
+  .prio i { width: 4px; height: 12px; border-radius: 2px; background: var(--line-2); }
+  .prio[data-s="5"] i.on { background: var(--red); }
+  .prio[data-s="4"] i.on { background: var(--orange); }
+  .prio[data-s="3"] i.on { background: var(--amber); }
+  .prio[data-s="2"] i.on, .prio[data-s="1"] i.on { background: #64748b; }
+  .info-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: .86rem; color: var(--ink-2); }
+  .info-row:hover { background: #fafbfc; }
+  .info-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+  .info-row .dot.read { background: var(--line-2); }
+  .info-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info-row small { margin-left: auto; color: var(--muted); white-space: nowrap; }
+  .empty { padding: 12px 16px; color: var(--muted); font-size: .86rem; }
+  .lane-foot { height: 8px; }
+
+  /* ---------- detail pane ---------- */
+  .pane { overflow-y: auto; min-width: 0; background: var(--bg); border-left: 1px solid var(--line); }
+  .pane-top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(8px); display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .pane-top .who { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: .85rem; min-width: 0; }
+  .toolbar { margin-left: auto; display: flex; gap: 6px; }
+  .btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel); font-weight: 550; font-size: .85rem; white-space: nowrap; }
+  .btn:hover { background: var(--bg); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.sq { padding: 7px 9px; }
+  .pane-in { padding: 20px; }
+  .pane h2 { margin: 0 0 8px; font-size: 1.35rem; line-height: 1.25; letter-spacing: -0.02em; font-weight: 650; }
+  .hero-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .summary { margin: 16px 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; color: var(--ink-2); }
+  .summary .i { color: var(--accent); margin-top: 2px; }
+  .summary small { display: block; color: var(--muted); font-size: .78rem; margin-top: 6px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-top: 14px; }
+  .box-h { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  .box-h small { color: var(--muted); font-weight: 500; }
+  .act { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 12px; padding: 11px 16px; align-items: center; border-top: 1px solid var(--line); }
+  .act:first-of-type { border-top: 0; }
+  .chk { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--line-2); display: grid; place-items: center; color: #fff; }
+  .act.done .chk { background: var(--green); border-color: var(--green); }
+  .act.done .at { text-decoration: line-through; color: var(--muted); }
+  .at { font-weight: 550; }
+  .act small { display: block; color: var(--muted); font-size: .8rem; }
+  .assg { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .assg .av { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: #e0e7ff; color: var(--accent); font-weight: 650; font-size: .72rem; }
+  .assg .av.none { background: none; border: 1.5px dashed var(--line-2); color: var(--muted); }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .two .box { margin-top: 14px; }
+  .needs { padding: 10px 16px 12px; display: grid; gap: 7px; }
+  .needs div { display: flex; gap: 10px; align-items: center; }
+  .needs .chk { width: 18px; height: 18px; border-radius: 5px; }
+  .ev { padding: 12px 16px; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; }
+  .cal-ico { border-radius: 10px; border: 1px solid var(--line); overflow: hidden; text-align: center; align-self: start; }
+  .cal-ico span { display: block; background: var(--red); color: #fff; font-size: .62rem; font-weight: 700; letter-spacing: .06em; padding: 2px 0; }
+  .cal-ico b { display: block; font-size: 1.25rem; padding: 1px 0 3px; }
+  .moved { color: var(--amber); font-size: .8rem; font-weight: 600; }
+  .tabs2 { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tabs2 button { padding: 6px 10px; border-radius: 7px; color: var(--muted); font-weight: 500; font-size: .85rem; white-space: nowrap; }
+  .tabs2 button.on { background: var(--bg); color: var(--ink); }
+  .srcl { padding: 4px 16px 10px; }
+  .src { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; padding: 10px 0; align-items: center; border-top: 1px solid var(--line); }
+  .src:first-child { border-top: 0; }
+  .src .ic { width: 34px; height: 34px; border-radius: 9px; background: var(--bg); display: grid; place-items: center; color: var(--ink-2); }
+  .src b { font-weight: 550; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .src small { color: var(--muted); font-size: .78rem; }
+  .ask { margin-top: 14px; display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 14px; }
+  .ask input { flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; }
+  .ask > .i { color: var(--accent); }
+  .scrim, .m-cta, .tabbar, .m-back, .m-kidjump, .m-search { display: none; }
+
+  /* ---------- calendar ---------- */
+  .cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
+  .cal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .cal-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .cal-bar strong { font-size: 1.05rem; font-weight: 650; }
+  .kidtog { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 600; border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px 4px 5px; }
+  .kidtog .kav { width: 20px; height: 20px; border-radius: 6px; font-size: .65rem; }
+  .kidtog.off { opacity: .45; }
+  .segm { display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; }
+  .segm button { padding: 4px 10px; border-radius: 7px; font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .segm a { padding: 4px 10px; border-radius: 7px; font-size: .8rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .segm a.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 8%); }
+  .segm button.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 8%); }
+  .cgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .cgrid .wdh { font-size: .7rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .cell { min-height: 112px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .cell:nth-child(7n) { border-right: 0; }
+  .cell .n { font-size: .8rem; font-weight: 600; color: var(--ink-2); width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; }
+  .cell .n.first { width: auto; padding: 0 7px; border-radius: 12px; background: var(--bg); }
+  .cell.we { background: #fafbfc; }
+  .cell.past .n { color: #b3bac6; }
+  .cell.today .n { background: var(--accent); color: #fff; }
+  .cell.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cell.off { background: repeating-linear-gradient(135deg, #fafbfc 0 6px, #f1f3f6 6px 11px); }
+  .offl { font-size: .68rem; font-weight: 650; color: var(--amber); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+  .ce { font-size: .74rem; line-height: 1.3; padding: 3px 6px; border-radius: 6px; background: var(--kid-soft); border-left: 3px solid var(--kid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .ce b { font-weight: 650; }
+  .ce.due { background: transparent; border: 1px dashed var(--kid); border-left: 3px solid var(--kid); }
+  .ce.late { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+  .cdots { display: none; }
+  .agenda .box-h { font-size: .95rem; }
+  .ag-sec { padding: 10px 16px 12px; border-top: 1px solid var(--line); }
+  .ag-sec:first-of-type { border-top: 0; }
+  .ag-sec h5 { margin: 0 0 8px; display: flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 650; }
+  .ag-sec h5 .kav { width: 22px; height: 22px; border-radius: 7px; font-size: .66rem; }
+  .ag { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 10px; padding: 6px 0; font-size: .85rem; }
+  .ag time { font-size: .72rem; font-weight: 650; color: var(--muted); text-transform: uppercase; line-height: 1.3; padding-top: 2px; }
+  .ag b { font-weight: 600; display: block; line-height: 1.3; }
+  .ag small { color: var(--muted); font-size: .78rem; }
+  .sync { font-size: .78rem; color: var(--muted); padding: 10px 16px; border-top: 1px solid var(--line); display: flex; gap: 6px; align-items: center; }
+
+  /* ---------- tablet ---------- */
+  @media (max-width: 1180px) {
+    .legend { display: none; }
+    .search { width: 200px; }
+    .work.has-pane { grid-template-columns: minmax(0, 1fr); }
+    .work.has-pane .pane { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, calc(100vw - 72px)); z-index: 30; box-shadow: -24px 0 50px -20px rgb(0 0 0 / 35%); }
+    .work.has-pane .scrim { display: block; position: fixed; inset: 0 0 0 72px; background: rgb(15 23 42 / 30%); z-index: 29; }
+    .two { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .cal-layout { grid-template-columns: minmax(0, 1fr); }
+    .agenda { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* ---------- phone ---------- */
+  @media (max-width: 760px) {
+    html, body { height: auto; }
+    .app { display: block; height: auto; }
+    .rail { display: none; }
+    .topbar { position: sticky; top: 0; z-index: 15; padding: 10px 14px 0; gap: 10px; }
+    .topbar h1 { padding-bottom: 0; font-size: 1.25rem; }
+    .tb-right { padding-bottom: 0; }
+    .search { display: none; }
+    .m-search { display: grid; }
+    .seg { order: 3; width: 100%; gap: 16px; }
+    .m-kidjump:not([hidden]) { display: none; }
+    .m-kidjump a { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 600; border: 1px solid var(--line); border-radius: 9px; padding: 3px 9px 3px 4px; }
+    .m-kidjump .kav { width: 22px; height: 22px; border-radius: 7px; font-size: .66rem; }
+    .work, .work.has-pane { display: block; }
+    .scroll { overflow: visible; padding: 12px 12px 96px; }
+    .lanes { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .lane { overflow: visible; scroll-margin-top: 110px; }
+    .lane-h { position: sticky; top: 99px; z-index: 5; background: var(--panel); background: linear-gradient(180deg, var(--kid-soft), var(--panel)); border-radius: 12px 12px 0 0; }
+    .lane-h .kav { width: 34px; height: 34px; }
+    .lstats { flex-direction: column; align-items: flex-end; gap: 3px; }
+    .row { padding: 12px 14px; }
+    .row.sel { background: none; border-left-color: transparent; }
+    .family { padding: 10px 12px; }
+    .fitem span { display: none; }
+    .segm.vt { order: 2; }
+    .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); padding: 6px 8px calc(8px + env(safe-area-inset-bottom)); z-index: 20; }
+    .tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: .68rem; color: var(--muted); font-weight: 500; padding: 4px 0; position: relative; }
+    .tabbar a.on { color: var(--accent); }
+    .tabbar .ct { position: absolute; top: 0; left: calc(50% + 6px); background: var(--red); color: #fff; font-size: .62rem; font-weight: 700; border-radius: 9px; padding: 0 5px; }
+    .tabbar .snap { margin-top: -22px; }
+    .tabbar .snap span { width: 52px; height: 52px; border-radius: 16px; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 8px 20px -6px rgb(79 70 229 / 60%); }
+
+    /* detail = full screen */
+    .work.has-pane .scroll, .work.has-pane .scrim { display: none; }
+    .work.has-pane .pane { position: static; width: auto; box-shadow: none; border: 0; min-height: 100vh; padding-bottom: 90px; }
+    body.detail .topbar, body.detail .tabbar { display: none; }
+    .m-back { display: inline-flex; align-items: center; gap: 2px; color: var(--accent); font-weight: 550; }
+    .pane-top .who, .toolbar .btn:not(.keep) { display: none; }
+    .pane-in { padding: 16px 14px; }
+    .pane h2 { font-size: 1.25rem; }
+    .m-cta { display: flex; position: fixed; left: 0; right: 0; bottom: 0; gap: 8px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); z-index: 20; }
+    .m-cta .btn { flex: 1; justify-content: center; padding: 11px; font-size: .95rem; }
+
+    /* assistant = bottom sheet on phones */
+    .ask-scrim { display: block; position: fixed; inset: 0; background: rgb(15 23 42 / 40%); z-index: 39; }
+    .ask-pop { left: 0; right: 0; bottom: 0; width: auto; height: 86vh; border-radius: 22px 22px 0 0; border: 0; }
+    .ask-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+
+    /* calendar on phone */
+    .cal-bar .segm { display: none; }
+    .cell { min-height: 58px; padding: 4px 2px; align-items: center; }
+    .cgrid .wdh { padding: 6px 0; text-align: center; font-size: .62rem; }
+    .ce, .offl { display: none; }
+    .cdots { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
+    .cdots i { width: 6px; height: 6px; border-radius: 50%; }
+    .agenda { display: block; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script src="data.js"></script>
+<script src="icons.js"></script>
+<script>
+  const { items, kids, fmt, kid, detail, health, params, dayDiff } = MOCK;
+  const screen = params.get('screen') ?? 'inbox';
+  const onlyKid = params.get('kid');
+  const view = params.get('view') ?? 'lanes';
+  if (screen === 'detail') document.body.classList.add('detail');
+  let seg = 'open';
+  let askOpen = params.get('ask') === '1';
+  const q = (extra) => '?' + new URLSearchParams({ ...(onlyKid ? { kid: onlyKid } : {}), ...(view !== 'lanes' ? { view } : {}), ...extra }).toString();
+
+  const prio = (s) => `<span class="prio" data-s="${s}" title="Importance ${s} of 5">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= s ? 'on' : ''}"></i>`).join('')}</span>`;
+  const kidVars = (k) => `--kid:${k.color};--kid-soft:${k.soft}`;
+  const shown = (it) => {
+    if (seg === 'open') return it.bucket === 'now' || it.bucket === 'coming';
+    if (seg === 'needs') return it.bucket === 'now';
+    if (seg === 'events') return !!it.event && it.bucket !== 'done';
+    if (seg === 'info') return it.bucket === 'noted';
+    if (seg === 'done') return it.bucket === 'done';
+    return true;
+  };
+
+  function row(it, withKid) {
+    const a = it.action, e = it.event, iso = MOCK.dateOf(it);
+    const n = iso ? dayDiff(iso) : null;
+    const kindCls = it.overdue ? 'k-late' : a?.payment ? 'k-pay' : !a && e ? 'k-ev' : '';
+    const kindIco = it.overdue ? 'alert' : a?.payment ? 'euro' : !a && e ? 'calendar' : a ? 'check' : 'info';
+    const tags = [
+      it.overdue ? '<span class="pill red">Overdue</span>' : '',
+      a && a.must && !it.overdue ? '<span class="pill">Required</span>' : '',
+      a && !a.must ? '<span class="pill">Optional</span>' : '',
+      a?.payment ? `<span class="pill green">${a.payment}</span>` : '',
+      a?.form ? '<span class="pill indigo">Form</span>' : '',
+      e ? `<span class="pill">${icon('calendar', 11, 2)}${a ? fmt.short(e.date) + ' · ' : ''}${e.time ?? 'All day'}</span>` : '',
+      it.change ? '<span class="pill amber">Changed</span>' : '',
+    ].join('');
+    const dueCls = n === null ? '' : n < 0 ? 'red' : n <= 3 ? 'amber' : '';
+    const dueTxt = it.bucket === 'done' ? 'Done ' + fmt.short(it.doneAt) : iso ? (n < 0 ? `${-n} days late` : fmt.rel(iso)) : '';
+    return `<a class="row ${it.overdue ? 'late' : ''} ${screen === 'detail' && it.id === 'wandertag' ? 'sel' : ''}" href="${q({ screen: 'detail' })}">
+      ${withKid ? `<span class="kind kid" style="background:${kid(it.kid).color}" title="${kid(it.kid).name}">${kid(it.kid).name[0]}</span>` : `<span class="kind ${kindCls}">${icon(kindIco, 15, 2)}</span>`}
+      <span style="min-width:0"><div class="t">${it.title}</div><div class="s">${it.summary}</div><div class="tags">${tags}</div></span>
+      <span class="rt"><span class="due ${dueCls}">${dueTxt}</span>${prio(it.score)}</span>
+    </a>`;
+  }
+
+  const byDate = (a, b) => (MOCK.dateOf(a) ?? '9999').localeCompare(MOCK.dateOf(b) ?? '9999') || b.score - a.score;
+  function groups(list, withKid) {
+    list = [...list].sort(byDate);
+    const late = list.filter((i) => i.overdue);
+    const soon = list.filter((i) => !i.overdue && MOCK.dateOf(i) && dayDiff(MOCK.dateOf(i)) <= 7 && i.bucket !== 'done');
+    const later = list.filter((i) => !i.overdue && MOCK.dateOf(i) && dayDiff(MOCK.dateOf(i)) > 7 && i.bucket !== 'done');
+    const rest = list.filter((i) => !late.includes(i) && !soon.includes(i) && !later.includes(i));
+    const group = (label, arr, cls = '') => arr.length ? `<div class="gl ${cls}"><span>${label}</span><span>${arr.length}</span></div>${arr.map((i) => row(i, withKid)).join('')}` : '';
+    return group('Overdue', late, 'red') + group('Due within 7 days', soon) + group('Later', later) + group(seg === 'done' ? 'Done recently' : seg === 'info' ? 'Information only' : 'No date', rest);
+  }
+
+  function lane(k) {
+    const mine = items.filter((i) => i.kid === k.id);
+    const list = mine.filter(shown).filter((i) => i.bucket !== 'noted' || seg === 'info' || seg === 'all');
+    const info = mine.filter((i) => i.bucket === 'noted');
+    const open = mine.filter((i) => i.bucket === 'now' || i.bucket === 'coming');
+    const cnt = { late: open.filter((i) => i.overdue).length, soon: open.filter((i) => !i.overdue && dayDiff(MOCK.dateOf(i)) <= 7).length, later: open.filter((i) => !i.overdue && dayDiff(MOCK.dateOf(i)) > 7).length };
+    return `<section class="lane" id="lane-${k.id}" style="${kidVars(k)}">
+      <header class="lane-h"><span class="kav">${k.name[0]}</span><span style="min-width:0"><b>${k.name}</b><small>${k.klass} · ${k.school}</small></span>
+        <span class="lstats">${cnt.late ? `<span class="lstat red">${cnt.late} overdue</span>` : ''}<span class="lstat">${cnt.soon} this week</span><span class="lstat">${cnt.later} later</span></span></header>
+      ${groups(list)}
+      ${!list.length ? '<div class="empty">Nothing here for ' + k.name + ' 🎉</div>' : ''}
+      ${info.length && seg !== 'info' && seg !== 'all' && seg !== 'done' ? `<div class="gl"><span>Just info</span><span>${info.length}</span></div>${info.map((i) => `<a class="info-row" href="${q({ screen: 'detail' })}"><i class="dot ${i.unread ? '' : 'read'}"></i><span>${i.title}</span><small>${fmt.ago(i.source.date)}</small></a>`).join('')}` : ''}
+      <div class="lane-foot"></div>
+    </section>`;
+  }
+
+  function together() {
+    const list = items.filter((i) => i.kid && shown(i)).filter((i) => i.bucket !== 'noted' || seg === 'info' || seg === 'all');
+    const info = items.filter((i) => i.kid && i.bucket === 'noted');
+    return `<section class="lane" style="--kid:var(--line-2);--kid-soft:var(--panel);border-top-width:1px">
+      ${groups(list, true)}
+      ${info.length && !['info', 'all', 'done'].includes(seg) ? `<div class="gl"><span>Just info</span><span>${info.length}</span></div>${info.map((i) => `<a class="info-row" href="${q({ screen: 'detail' })}"><i class="dot ${i.unread ? '' : 'read'}"></i><span><b style="color:${kid(i.kid).color}">${kid(i.kid).name}</b> · ${i.title}</span><small>${fmt.ago(i.source.date)}</small></a>`).join('')}` : ''}
+      <div class="lane-foot"></div></section>`;
+  }
+
+  function familyStrip() {
+    const fam = items.filter((i) => !i.kid && i.bucket !== 'done');
+    if (!fam.length) return '';
+    return `<div class="family"><span class="lab"><span class="kav">★</span>Both kids</span>
+      ${fam.map((i) => `<a class="fitem" href="${q({ screen: 'detail' })}">${icon(i.event ? 'calendar' : 'info', 14)}<b>${i.title}</b><span>· ${i.summary.split('.')[0]}</span></a>`).join('')}</div>`;
+  }
+
+  function rail(active) {
+    const nOpen = items.filter((i) => i.bucket === 'now').length;
+    return `<nav class="rail">
+      <a class="logo" href="?">${icon('school', 20, 2)}</a>
+      <a class="ri ${active === 'inbox' ? 'on' : ''}" data-tip="Inbox" href="?">${icon('inbox', 20)}<span class="ct">${nOpen}</span></a>
+      <a class="ri ${active === 'calendar' ? 'on' : ''}" data-tip="Calendar" href="?screen=calendar">${icon('calendar', 20)}</a>
+      <hr />
+      <a class="ri kid ${!onlyKid ? 'on' : ''}" data-tip="Both kids" href="?${screen === 'calendar' ? 'screen=calendar' : ''}"><span class="kav" style="background:#4b5563">★</span></a>
+      ${kids.map((k) => `<a class="ri kid ${onlyKid === k.id ? 'on' : ''}" data-tip="Only ${k.name}" href="?kid=${k.id}${screen === 'calendar' ? '&screen=calendar' : ''}"><span class="kav" style="background:${k.color}">${k.name[0]}</span></a>`).join('')}
+      <div class="rail-foot">
+        <button class="ri act-snap" data-tip="Snap a letter (photo or PDF)">${icon('camera', 20)}</button>
+        <button class="ri act-ask ${askOpen ? 'open' : ''}" data-tip="Ask the assistant" id="askBtn">${icon('sparkle', 20)}</button>
+        <hr />
+        <a class="ri" data-tip="Audit trail" href="#">${icon('audit', 20)}</a>
+        <a class="ri" data-tip="Settings" href="#">${icon('settings', 20)}</a>
+        <a class="ri" data-tip="Browser worker slow — last run 3 h ago" href="#"><span class="hdot"></span></a>
+        <span class="me">R</span>
+      </div>
+    </nav>`;
+  }
+
+  function tabbar(active) {
+    return `<nav class="tabbar">
+      <a class="${active === 'inbox' ? 'on' : ''}" href="?">${icon('inbox', 22)}Inbox<span class="ct">1</span></a>
+      <a class="${active === 'calendar' ? 'on' : ''}" href="?screen=calendar">${icon('calendar', 22)}Calendar</a>
+      <a class="snap" href="#"><span>${icon('camera', 24)}</span></a>
+      <a href="#" id="askTab" class="${askOpen ? 'on' : ''}">${icon('sparkle', 22)}Ask</a>
+      <a href="#">${icon('settings', 22)}Settings</a>
+    </nav>`;
+  }
+
+  function pane() {
+    const d = detail, k = kid(d.kid), e = d.events[0];
+    return `<a class="scrim" href="${q({})}"></a><section class="pane">
+      <div class="pane-top">
+        <a class="m-back" href="${q({})}">${icon('chevL', 18, 2.2)} Inbox</a>
+        <span class="who"><span class="kav" style="background:${k.color};width:24px;height:24px;border-radius:7px;font-size:.7rem">${k.name[0]}</span>${k.name} · ${k.klass}</span>
+        <span class="toolbar">
+          <button class="btn">${icon('user', 15)} Assign</button>
+          <button class="btn primary">${icon('check', 15, 2.4)} Done</button>
+          <button class="btn sq keep">${icon('more', 16)}</button>
+          <a class="btn sq" href="${q({})}" title="Close">${icon('x', 16)}</a>
+        </span>
+      </div>
+      <div class="pane-in">
+        <h2>${d.title}</h2>
+        <div class="hero-tags"><span class="pill indigo">Needs us</span><span class="pill red">Due Fri 2 Oct</span><span class="pill amber">Changed today</span><span class="pill">Opened ${fmt.short(d.opened)}</span>${prio(d.score)}</div>
+        <div class="summary">${icon('sparkle', 18)}<div>${d.summary}<small>AI summary from 2 sources · check the original for exact wording</small></div></div>
+        <div class="box" style="margin-top:0"><div class="box-h">Actions <small>1 of 3 done</small></div>
+          ${d.actions.map((a) => `<div class="act ${a.done ? 'done' : ''}"><span class="chk">${a.done ? icon('check', 12, 3) : ''}</span>
+            <span style="min-width:0"><span class="at">${a.title}</span><small>${a.done ? 'Completed by ' + a.who : `Due ${fmt.wdShort(a.due)} · ${a.must ? 'Required' : 'Optional'}`}</small></span>
+            <span class="assg">${a.who ? `<span class="av">${a.who[0]}</span>${a.who}` : '<span class="av none">+</span>Take it'}</span></div>`).join('')}</div>
+        <div class="two">
+          <div class="box"><div class="box-h">Event</div><div class="ev"><span class="cal-ico"><span>${fmt.mon(e.date).toUpperCase()}</span><b>${fmt.day(e.date)}</b></span>
+            <span><b>${e.title}</b><div style="color:var(--ink-2)">${fmt.wd(e.date)} · ${e.time} – ${e.end}</div><div style="color:var(--muted)">${e.location}</div><div class="moved">Moved · ${e.note}</div></span></div></div>
+          <div class="box"><div class="box-h">Jamie needs</div><div class="needs">${d.needs.map((n) => `<div><span class="chk"></span>${n}</div>`).join('')}</div></div>
+        </div>
+        <div class="box"><div class="tabs2"><button class="on">Sources · 2</button><button>Changes · 2</button><button>History</button><button>Evidence</button></div>
+          <div class="srcl">${d.sources.map((s) => `<div class="src"><span class="ic">${icon(s.type === 'Email' ? 'mail' : 'file', 17)}</span><span style="min-width:0"><b>${s.title}</b><small>${s.type} · ${s.sender} · ${fmt.short(s.date)} · ${s.lang}</small></span><button class="btn" style="padding:5px 9px">${icon('translate', 14)} Read</button></div>`).join('')}</div></div>
+        <label class="ask">${icon('sparkle', 18)}<input placeholder="Ask about this letter…" /><button class="btn primary sq">${icon('send', 15)}</button></label>
+      </div>
+      <div class="m-cta"><button class="btn">${icon('user', 16)} Assign</button><button class="btn primary">${icon('check', 16, 2.4)} Done</button></div>
+    </section>`;
+  }
+
+  function topbar(title, withSeg) {
+    const count = (fn) => items.filter((i) => (!onlyKid || i.kid === onlyKid) && fn(i)).length;
+    const segs = [['open', 'Open', count((i) => i.bucket === 'now' || i.bucket === 'coming')], ['needs', 'Needs us', count((i) => i.bucket === 'now')], ['events', 'Events', count((i) => i.event && i.bucket !== 'done')], ['info', 'Info', count((i) => i.bucket === 'noted')], ['done', 'Done', ''], ['all', 'All', '']];
+    return `<header class="topbar"><h1>${title}</h1>
+      ${withSeg ? `<div class="seg" id="seg">${segs.map(([k, l, n]) => `<button data-k="${k}" class="${seg === k ? 'on' : ''}">${l}${n ? `<sup>${n}</sup>` : ''}</button>`).join('')}</div>` : ''}
+      <div class="tb-right">
+        ${withSeg ? `<span class="legend">${prio(4)} importance</span>` : ''}
+        ${withSeg && !onlyKid ? `<span class="segm vt"><a class="${view === 'lanes' ? 'on' : ''}" href="?${screen === 'detail' ? 'screen=detail' : ''}">By child</a><a class="${view === 'together' ? 'on' : ''}" href="?view=together${screen === 'detail' ? '&screen=detail' : ''}">Together</a></span>` : ''}
+        <label class="search">${icon('search', 16)}<input placeholder="Search letters and dates" /></label>
+        <button class="icon-btn m-search" aria-label="Search">${icon('search', 18)}</button>
+        <span class="m-kidjump" ${view === 'together' ? 'hidden' : ''}>${kids.map((k) => `<a href="#lane-${k.id}"><span class="kav" style="background:${k.color}">${k.name[0]}</span>${k.name}</a>`).join('')}</span>
+      </div></header>`;
+  }
+
+  function inbox() {
+    const ks = onlyKid ? kids.filter((k) => k.id === onlyKid) : kids;
+    return `${rail('inbox')}<div class="main">${topbar(onlyKid ? kid(onlyKid).name : 'Inbox', true)}
+      <div class="work ${screen === 'detail' ? 'has-pane' : ''}">
+        <div class="scroll">${onlyKid ? '' : familyStrip()}<div class="lanes ${onlyKid || view === 'together' ? 'single' : ''}">${view === 'together' && !onlyKid ? together() : ks.map(lane).join('')}</div></div>
+        ${screen === 'detail' ? pane() : ''}
+      </div></div>${tabbar('inbox')}`;
+  }
+
+  // ---------- calendar ----------
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const OFF = { '2026-10-03': 'Tag der Deutschen Einheit' };
+  for (let n = 2; n <= 6; n++) OFF[`2026-11-0${n}`] = 'Herbstferien';
+
+  function calendar() {
+    const start = new Date(2026, 8, 28, 12);
+    const days = Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(d.getDate() + i); return d; });
+    const vis = (it) => it.bucket !== 'done' && (!onlyKid || it.kid === onlyKid);
+    const on = (key) => items.filter(vis).flatMap((it) => {
+      const out = [];
+      if (it.event?.date === key) out.push({ it, type: 'ev' });
+      if (it.action?.due === key && it.action.due !== it.event?.date) out.push({ it, type: 'due' });
+      return out;
+    });
+    const sel = '2026-10-07';
+    const cells = days.map((d) => {
+      const key = iso(d), n = dayDiff(key), list = on(key), wk = d.getDay() === 0 || d.getDay() === 6;
+      return `<div class="cell ${wk ? 'we' : ''} ${n < 0 ? 'past' : ''} ${n === 0 ? 'today' : ''} ${OFF[key] ? 'off' : ''} ${key === sel ? 'sel' : ''}">
+        <span class="n ${d.getDate() === 1 ? 'first' : ''}">${d.getDate() === 1 ? `1 ${fmt.mon(key)}` : d.getDate()}</span>
+        ${OFF[key] ? `<span class="offl">${OFF[key]}</span>` : ''}
+        ${list.slice(0, 3).map(({ it, type }) => { const k = kid(it.kid); return `<a class="ce ${type === 'due' ? 'due' : ''}" style="${kidVars(k)}" href="${q({ screen: 'detail' })}" title="${it.title}">${type === 'ev' && it.event.time ? `<b>${it.event.time}</b> ` : type === 'due' ? '<b>Due</b> ' : ''}${it.title}</a>`; }).join('')}
+        ${list.length > 3 ? `<span class="offl" style="color:var(--muted)">+${list.length - 3} more</span>` : ''}
+        <span class="cdots">${list.map(({ it }) => `<i style="background:${kid(it.kid).color}"></i>`).join('')}${OFF[key] ? '<i style="background:var(--amber)"></i>' : ''}</span>
+      </div>`;
+    }).join('');
+    const overdue = items.filter((i) => i.overdue && vis(i));
+    const upcoming = (k) => items.filter((it) => vis(it) && it.kid === k.id && !it.overdue && MOCK.dateOf(it) && dayDiff(MOCK.dateOf(it)) >= 0)
+      .sort((a, b) => (a.event?.date ?? a.action.due).localeCompare(b.event?.date ?? b.action.due)).slice(0, 4);
+    const ag = (it) => { const key = it.event?.date ?? it.action.due; return `<a class="ag" href="${q({ screen: 'detail' })}"><time>${fmt.wd(key)}<br>${fmt.short(key)}</time><span><b>${it.title}</b><small>${it.event ? (it.event.time ?? 'All day') + (it.event.location ? ' · ' + it.event.location : '') : 'Due · ' + (it.action.must ? 'required' : 'optional')}</small></span></a>`; };
+    const selItems = on(sel);
+    const ks = onlyKid ? kids.filter((k) => k.id === onlyKid) : kids;
+    return `${rail('calendar')}<div class="main">${topbar('Calendar', false)}
+      <div class="work"><div class="scroll">
+        <div class="cal-layout">
+          <section class="cal-card">
+            <div class="cal-bar"><button class="icon-btn">${icon('chevL', 16)}</button><strong>28 Sep – 8 Nov</strong><button class="icon-btn">${icon('chevR', 16)}</button><button class="btn" style="padding:5px 10px">Today</button>
+              <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                ${kids.map((k) => `<span class="kidtog ${onlyKid && onlyKid !== k.id ? 'off' : ''}"><span class="kav" style="background:${k.color}">${k.name[0]}</span>${k.name}</span>`).join('')}
+                <span class="kidtog"><span class="kav" style="background:var(--amber)">★</span>School holidays</span>
+                <span class="segm"><button>Month</button><button class="on">6 weeks</button><button>Agenda</button></span></span></div>
+            <div class="cgrid">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((w) => `<div class="wdh">${w}</div>`).join('')}${cells}</div>
+            <div class="sync">${icon('check', 14, 2.4)}Events are also in the family Google Calendar · synced 5 min ago</div>
+          </section>
+          <aside class="agenda">
+            <div class="box" style="margin-top:0"><div class="box-h">Wed 7 Oct <small>selected</small></div>
+              <div class="ag-sec">${selItems.map(({ it }) => ag(it)).join('') || '<small style="color:var(--muted)">Nothing on this day</small>'}</div></div>
+            <div class="box"><div class="box-h">Coming up</div>
+              ${overdue.length ? `<div class="ag-sec"><h5 style="color:var(--red)">${icon('alert', 15, 2.2)}Overdue</h5>${overdue.map((it) => `<a class="ag" href="${q({ screen: 'detail' })}"><time style="color:var(--red)">${fmt.short(it.action.due)}</time><span><b>${it.title}</b><small>${kid(it.kid).name} · ${-dayDiff(it.action.due)} days late</small></span></a>`).join('')}</div>` : ''}
+              ${ks.map((k) => `<div class="ag-sec"><h5><span class="kav" style="background:${k.color}">${k.name[0]}</span>${k.name}</h5>${upcoming(k).map(ag).join('')}</div>`).join('')}
+            </div>
+          </aside>
+        </div>
+      </div></div></div>${tabbar('calendar')}`;
+  }
+
+  function askPanel() {
+    const src = (t) => `<span class="cite">${icon('file', 12)}${t}</span>`;
+    return `<div class="ask-scrim" id="askScrim"></div>
+    <section class="ask-pop" role="dialog" aria-label="Assistant">
+      <header class="ask-h"><span class="ask-logo">${icon('sparkle', 16)}</span><b>Assistant</b><small>Answers only from your school letters</small>
+        <button class="icon-btn" id="askClose" aria-label="Close">${icon('x', 16)}</button></header>
+      <div class="ask-body">
+        <div class="msg mine">When is the next Elternabend?</div>
+        <div class="msg bot">Jamie’s <b>Elternabend 7b</b> is on <b>Thu 1 Oct at 19:30</b> in Room 214. It was moved from 18:00.
+          <div class="cites">${src('Schulmanager · Ms Huber · 18 Sep')}<a class="cite link" href="${q({ screen: 'detail' })}">Open ${icon('arrowRight', 12)}</a></div></div>
+        <div class="msg mine">Any costs coming up in October?</div>
+        <div class="msg bot">Four payments, <b>€174.50 required</b> plus one optional:
+          <ul><li><b style="color:var(--red)">€46.50</b> Mia · lunch fees — <b>overdue</b></li><li><b>€8.00</b> Jamie · Wandertag bus — by Fri 2 Oct</li><li><b>€120.00</b> Jamie · Klassenfahrt deposit — by 16 Oct</li><li><b>€24.90</b> Jamie · Weltatlas — optional, by 9 Oct</li></ul>
+          <div class="cites">${src('Mensa email')}${src('Elternbrief Wandertag')}${src('Schulmanager')}${src('+1')}</div></div>
+      </div>
+      <div class="ask-foot">
+        <div class="sugg"><button>What does Mia need this week?</button><button>Anything changed today?</button></div>
+        <label class="ask-in"><input placeholder="Ask about dates, letters, fees…" /><button class="btn primary sq">${icon('send', 15)}</button></label>
+      </div>
+    </section>`;
+  }
+
+  function render() {
+    document.getElementById('app').innerHTML = (screen === 'calendar' ? calendar() : inbox()) + (askOpen ? askPanel() : '');
+    const toggle = (e) => { e?.preventDefault(); askOpen = !askOpen; render(); };
+    ['askBtn', 'askTab', 'askClose', 'askScrim'].forEach((id) => { const el = document.getElementById(id); if (el) el.onclick = toggle; });
+    document.querySelectorAll('#seg button').forEach((b) => b.onclick = () => { seg = b.dataset.k; render(); });
+  }
+  render();
+</script>
+</body>
+</html>

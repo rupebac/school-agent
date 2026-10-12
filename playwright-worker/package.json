@@ -1,0 +1,14 @@
+{
+  "name": "school-agent-playwright-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only Playwright investigation worker for the school agent (spec §11/§12)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright": "^1.55.0"
+  }
+}

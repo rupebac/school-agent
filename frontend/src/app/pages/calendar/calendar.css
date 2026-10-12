@@ -1,0 +1,389 @@
+.cal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+  padding: 16px 20px;
+}
+
+.cal-card,
+.box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.cal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+
+  strong {
+    font-size: 1.05rem;
+    font-weight: 650;
+    min-width: 9.5em;
+    text-align: center;
+  }
+}
+.small {
+  padding: 5px 10px;
+  font-size: 0.85rem;
+}
+
+.bar-right {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.kidkey {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.kav {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  font-size: 0.66rem;
+}
+
+.tog {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ---------- month grid ---------- */
+.cgrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.wdh {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cell {
+  min-width: 0;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+
+  &:nth-child(7n) {
+    border-right: 0;
+  }
+
+  &.we {
+    background: #fafbfc;
+  }
+
+  &.off {
+    background: repeating-linear-gradient(135deg, #fafbfc 0 6px, #f1f3f6 6px 11px);
+  }
+
+  &.sel {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  &.pad {
+    background: #fcfcfd;
+    cursor: default;
+  }
+}
+
+.n {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+
+  &:hover {
+    filter: none;
+    background: var(--bg);
+  }
+}
+
+.today .n {
+  background: var(--accent);
+  color: #fff;
+}
+
+.more {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+.ce {
+  --kid: var(--muted);
+  display: block;
+  padding: 3px 6px;
+  border-left: 3px solid var(--kid);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--kid) 13%, var(--surface));
+  color: var(--text);
+  font-size: 0.74rem;
+  line-height: 1.3;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  b {
+    font-weight: 650;
+  }
+
+  &.due {
+    background: var(--surface);
+    border: 1px dashed var(--kid);
+    border-left: 3px solid var(--kid);
+  }
+
+  &.late {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+}
+
+.phone {
+  display: none !important;
+}
+
+.cal-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* ---------- agenda ---------- */
+.agenda {
+  display: grid;
+  gap: 16px;
+}
+
+.box-h {
+  margin: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.ag-sec {
+  margin: 0;
+  padding: 10px 16px 12px;
+
+  & + & {
+    border-top: 1px solid var(--border);
+  }
+
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    font-size: 0.82rem;
+    font-weight: 650;
+
+    &.late {
+      color: var(--danger);
+    }
+  }
+}
+
+.ag {
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 0;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.86rem;
+
+  &.dated {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  &:hover b {
+    text-decoration: underline;
+  }
+
+  .bar {
+    border-radius: 4px;
+  }
+
+  time {
+    padding-top: 2px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 650;
+    line-height: 1.3;
+    text-transform: uppercase;
+
+    &.late {
+      color: var(--danger);
+    }
+  }
+
+  b {
+    display: block;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  small {
+    display: block;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+}
+
+.off-banner {
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (max-width: 1180px) {
+  .cal-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .agenda {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+@media (max-width: 760px) {
+  .cal-layout {
+    padding: 12px;
+  }
+
+  .cal-bar {
+    padding: 10px 12px;
+
+    strong {
+      min-width: 0;
+      flex: 1;
+    }
+  }
+
+  .bar-right {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .wdh {
+    padding: 6px 0;
+    text-align: center;
+    font-size: 0.62rem;
+  }
+
+  .cell {
+    min-height: 58px;
+    align-items: center;
+    padding: 4px 2px;
+  }
+
+  .desk {
+    display: none !important;
+  }
+
+  .phone {
+    display: revert !important;
+  }
+
+  /* Important entries keep a short label on the narrow grid; the rest are dots. */
+  .ce.hot {
+    display: -webkit-box !important;
+    width: 100%;
+    padding: 1px 3px;
+    border-left-width: 2px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: normal;
+    /* Phones hyphenate German compounds properly (Schul-land-heim); browsers without
+       hyphenation data still show the whole word over two lines instead of cutting it. */
+    hyphens: auto;
+    -webkit-hyphens: auto;
+    overflow-wrap: anywhere;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .cdots.phone {
+    display: flex !important;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 3px;
+
+    i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    b {
+      color: var(--muted);
+      font-size: 0.6rem;
+      line-height: 1;
+    }
+
+  }
+
+  .agenda {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

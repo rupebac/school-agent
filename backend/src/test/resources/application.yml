@@ -1,0 +1,12 @@
+schoolagent:
+  initial-username: morgan
+  initial-password: test-only-password
+  # Fixed synthetic test key; production requires an operator-generated key.
+  master-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  calendar:
+    auto-import: false
+spring:
+  profiles:
+    active: test
+  datasource:
+    password: test-only-database-password

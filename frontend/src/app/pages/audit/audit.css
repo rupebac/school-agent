@@ -1,0 +1,35 @@
+.table-wrap {
+  overflow-x: auto;
+  padding: 8px 4px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+
+  th {
+    color: var(--muted);
+    font-weight: 650;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .nowrap {
+    white-space: nowrap;
+  }
+
+  .detail {
+    color: var(--muted);
+    word-break: break-word;
+    max-width: 360px;
+  }
+}

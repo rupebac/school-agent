@@ -1,0 +1,24 @@
+name: Privacy and secrets
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check tracked examples and private files
+        run: python3 scripts/check-public-content.py
+      - name: Scan complete Git history for secrets
+        env:
+          SCANNER_VERSION: 8.30.1
+          SCANNER_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${SCANNER_VERSION}/gitleaks_${SCANNER_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          printf '%s  /tmp/gitleaks.tar.gz\n' "$SCANNER_SHA256" | sha256sum --check
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks git . --log-opts='--all' --redact --no-banner --ignore-gitleaks-allow

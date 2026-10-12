@@ -1,0 +1,177 @@
+<div class="inbox" [class.has-pane]="paneOpen()">
+  <section class="lanes-col">
+    @if (compactBar()) {
+      <div class="page-bar"><ng-container *ngTemplateOutlet="barTpl" /></div>
+    }
+
+    <div class="lanes-body">
+      @if (cases.error(); as err) {
+        <p class="error" role="alert">{{ 'dash.apiUnreachable' | t: { err } }}</p>
+      }
+
+      <!-- A background refresh must keep the keyed cards mounted: replacing them
+           with a spinner collapses the document and resets the browser's scroll. -->
+      @if (loading() && nothingIngested()) {
+        <p class="muted">{{ 'common.loading' | t }}</p>
+      } @else if (nothingIngested()) {
+        @if (!cases.error()) {
+          <div class="card empty-hero">
+            <h2>{{ 'inbox.emptyAll' | t }}</h2>
+            <p>{{ 'inbox.emptyHint' | t }}</p>
+          </div>
+        }
+      } @else if (shown().length === 0) {
+        <div class="card empty-hero">
+          <h2>{{ emptyKey() | t }}</h2>
+        </div>
+      } @else if (useLanes()) {
+        @if (sharedSections().length) {
+          <section class="lane shared">
+            <header class="lane-h">
+              <span class="kav all">★</span>
+              <span class="who"><b>{{ 'inbox.bothKids' | t }}</b><small>{{ 'inbox.bothKidsHint' | t }}</small></span>
+            </header>
+            <ng-container *ngTemplateOutlet="sectionsTpl; context: { $implicit: sharedSections(), withKid: false, scope: 'shared' }" />
+          </section>
+        }
+        <div class="lanes" [class.single]="lanes().length === 1">
+          @for (lane of lanes(); track lane.kid.id) {
+            <section class="lane" [style.--kid]="lane.kid.color || 'var(--accent)'">
+              <header class="lane-h">
+                <span class="kav" [style.background]="lane.kid.color || 'var(--accent)'">{{ lane.kid.name.charAt(0) }}</span>
+                <span class="who">
+                  <b>{{ lane.kid.name }}</b>
+                  @if (kidLine(lane.kid); as line) { <small>{{ line }}</small> }
+                </span>
+                <span class="lstats">
+                  @if (lane.stats.overdue) { <span class="lstat red">{{ 'inbox.stat.overdue' | t: { n: lane.stats.overdue } }}</span> }
+                  <span class="lstat">{{ 'inbox.stat.soon' | t: { n: lane.stats.soon } }}</span>
+                  <span class="lstat">{{ 'inbox.stat.later' | t: { n: lane.stats.later } }}</span>
+                </span>
+              </header>
+              @if (lane.sections.length) {
+                <ng-container *ngTemplateOutlet="sectionsTpl; context: { $implicit: lane.sections, withKid: false, scope: lane.kid.id }" />
+              } @else {
+                <p class="lane-empty">{{ 'inbox.laneEmpty' | t: { name: lane.kid.name } }}</p>
+              }
+            </section>
+          }
+        </div>
+      } @else {
+        <section class="lane together">
+          <ng-container *ngTemplateOutlet="sectionsTpl; context: { $implicit: togetherSections(), withKid: true, scope: 'together' }" />
+        </section>
+      }
+    </div>
+  </section>
+
+  <a class="pane-scrim" [routerLink]="nav.returnTree()" [attr.aria-label]="'case.close' | t" [hidden]="!paneOpen()"></a>
+  <aside class="pane" [hidden]="!paneOpen()">
+    <router-outlet (activate)="paneOpen.set(true)" (deactivate)="paneOpen.set(false)" />
+  </aside>
+</div>
+
+<ng-template #sectionsTpl let-sections let-withKid="withKid" let-scope="scope">
+  @for (section of sections; track section.group) {
+    <section class="inbox-group">
+      <h3 class="gl" [class.red]="section.group === 'overdue'">
+        {{ groupKey(section.group) | t }}
+        <button type="button" class="section-toggle" [attr.aria-expanded]="!isCollapsed(scope, section.group)" [attr.aria-controls]="sectionId(scope, section.group)" [attr.aria-label]="(isCollapsed(scope, section.group) ? 'inbox.expandSection' : 'inbox.collapseSection') | t: { name: (groupKey(section.group) | t) }" (click)="toggleSection(scope, section.group)">
+          <span aria-hidden="true">{{ isCollapsed(scope, section.group) ? '+' : '−' }}</span>
+        </button>
+      </h3>
+      <div [id]="sectionId(scope, section.group)" [hidden]="isCollapsed(scope, section.group)">
+        @for (row of section.items; track row.caseId) {
+          <ng-container *ngTemplateOutlet="rowTpl; context: { $implicit: row, withKid }" />
+        }
+      </div>
+    </section>
+  }
+</ng-template>
+
+<ng-template #rowTpl let-row let-withKid="withKid">
+  <article
+    class="item-card row"
+    [class.late]="row.overdue"
+    [class.sel]="selectedId() === row.caseId"
+    [class.finished]="isClosed(row)"
+    [class.unread]="row.informationOnly && !row.read && !isClosed(row)"
+  >
+    @if (withKid) {
+      <span class="kind kid" [style.background]="row.childColor || 'var(--muted)'" [title]="row.childName || ('inbox.bothKids' | t)">
+        {{ row.childName ? row.childName.charAt(0) : '★' }}
+      </span>
+    } @else {
+      <span class="kind" [class]="'kind k-' + kindOf(row)"><app-icon [name]="kindIcon(row)" [size]="15" [stroke]="2" /></span>
+    }
+    <div class="body">
+      <a class="t" [routerLink]="['/cases', row.caseId]">{{ row.title }}</a>
+      @if (row.summary) { <p class="s">{{ row.summary }}</p> }
+      @if (row.actionLabel && row.actionLabel !== row.summary) { <p class="do">{{ row.actionLabel }}</p> }
+      @if (row.latestChange) { <p class="chg">{{ 'inbox.updated' | t }} · {{ row.latestChange }}</p> }
+      <div class="tags">
+        @if (withKid) {
+          <span class="pill kidname" [style.--kid]="row.childColor || 'var(--muted)'">{{ row.childName || ('inbox.bothKids' | t) }}</span>
+        }
+        @if (row.archived) { <span class="pill">{{ 'inbox.archived' | t }}</span> }
+        @if (row.overdue) { <span class="pill red">{{ 'inbox.overdue' | t }}</span> }
+        @if (row.optional) { <span class="pill">{{ 'tag.optional' | t }}</span> }
+        @if (row.status === 'NEEDS_REVIEW' || row.status === 'FAILED') { <span class="pill amber">{{ 'inbox.needsReview' | t }}</span> }
+        @if (row.informationOnly && !row.read && !isClosed(row)) { <span class="pill indigo">{{ 'inbox.unread' | t }}</span> }
+        @if (row.event?.location) { <span class="pill"><app-icon name="pin" [size]="12" />{{ row.event.location }}</span> }
+        @if (row.action?.externalLink; as link) {
+          <a class="pill indigo link" [href]="link.url" [title]="link.kind === 'PORTAL' && link.provider !== 'SCHULMANAGER' ? ('actions.portalHint' | t) : ''" target="_blank" rel="noopener"><app-icon name="external" [size]="11" [stroke]="2" />{{ (link.kind === 'PORTAL' ? (link.provider === 'SCHULMANAGER' ? 'actions.openSchulmanager' : 'actions.openPortal') : 'actions.openForm') | t }}</a>
+        }
+        <span class="src">
+          @for (source of row.sourceTypes ?? []; track source) { <span>{{ sourceLabel(source) }}</span> }
+          @if (row.sourceDate) { <time [attr.datetime]="row.sourceDate">{{ ('inbox.source.' + (row.sourceDateLabel || 'Sent')) | t }} {{ row.sourceDate | ldate: 'd MMM y' }}</time> }
+        </span>
+      </div>
+    </div>
+    <div class="rt">
+      @if (due(row) || eventWhen(row)) {
+        <div class="timing">
+          @if (due(row); as d) { <span class="due" [class]="'due ' + d.tone">{{ d.text }}</span> }
+          @if (eventWhen(row); as when) { <span class="event-date">{{ when }}</span> }
+        </div>
+      }
+      <app-importance [score]="row.score" />
+      @if (showDone(row)) {
+        <button type="button" class="op" (click)="done(row)">
+          @if (!row.informationOnly) { <app-icon name="check" [size]="13" [stroke]="2.4" /> }
+          {{ row.informationOnly ? (row.read ? ('inbox.markUnread' | t) : ('inbox.markRead' | t)) : ('actions.done' | t) }}
+        </button>
+      }
+      @if (row.canUndo) { <button type="button" class="op" (click)="undo(row)"><app-icon name="undo" [size]="13" [stroke]="2.2" />{{ 'inbox.undoDone' | t }}</button> }
+    </div>
+  </article>
+</ng-template>
+
+<!-- Filters and layout switch: in the shell's header row on wide screens, above the list on phones. -->
+<ng-template #barTpl>
+  <div class="bar">
+      <div class="seg visibility" role="group" [attr.aria-label]="'inbox.filter' | t">
+        <button type="button" [class.on]="controls().info" [attr.aria-pressed]="controls().info" [attr.aria-label]="'inbox.showInfo' | t" (click)="toggleVisibility('info')"><span class="toggle-track" aria-hidden="true"></span>{{ 'inbox.noted' | t }}</button>
+        <button type="button" [class.on]="controls().done" [attr.aria-pressed]="controls().done" [attr.aria-label]="'inbox.showDone' | t" (click)="toggleVisibility('done')"><span class="toggle-track" aria-hidden="true"></span>{{ 'inbox.done' | t }}</button>
+        <button type="button" [class.on]="controls().archived" [attr.aria-pressed]="controls().archived" [attr.aria-label]="'inbox.showArchived' | t" (click)="toggleVisibility('archived')"><span class="toggle-track" aria-hidden="true"></span>{{ 'inbox.archived' | t }}</button>
+      </div>
+      <div class="importance-filter" role="group" [attr.aria-label]="'inbox.importanceFilter' | t">
+        <span class="severity-caption">{{ 'inbox.importanceFilter' | t }} · {{ controls().minScore === 5 ? '5' : controls().minScore ? ('inbox.importanceRange' | t: { n: controls().minScore }) : ('inbox.anyImportance' | t) }}</span>
+        <div class="severity-levels">
+          @for (n of levels; track n) {
+            <button type="button" [attr.data-level]="n" [class.selected]="controls().minScore === n" [class.excluded]="controls().minScore > n" [attr.aria-pressed]="controls().minScore === n" [attr.aria-label]="(controls().minScore === n ? 'inbox.clearImportance' : 'inbox.minimumImportance') | t: { n }" [title]="((controls().minScore === n ? 'inbox.clearImportance' : 'inbox.minimumImportance') | t: { n }) + ' · ' + ('score.' + n | t)" (click)="setMinimumScore(n)">
+              <i aria-hidden="true" [style.height.px]="8 + n * 2"></i><span aria-hidden="true">{{ n }}</span>
+            </button>
+          }
+        </div>
+      </div>
+      <span class="bar-right">
+        @if (canSplit()) {
+          <span class="seg layout" role="group" [attr.aria-label]="'inbox.layout' | t">
+            <button type="button" [class.on]="layout() === 'lanes'" [attr.aria-pressed]="layout() === 'lanes'" (click)="setLayout('lanes')">{{ 'inbox.byChild' | t }}</button>
+            <button type="button" [class.on]="layout() === 'together'" [attr.aria-pressed]="layout() === 'together'" (click)="setLayout('together')">{{ 'inbox.together' | t }}</button>
+          </span>
+        }
+      </span>
+  </div>
+</ng-template>

@@ -1,0 +1,405 @@
+<div class="pane-top">
+  <a [routerLink]="nav.returnTree()" class="back"><app-icon name="chevL" [size]="18" [stroke]="2.2" /><span>{{ nav.returnLabel() | t }}</span></a>
+  @if (detail(); as d) {
+    @if (d.childName) {
+      <span class="who"><span class="kav" [style.background]="d.childColor || 'var(--accent)'">{{ d.childName.charAt(0) }}</span>{{ d.childName }}</span>
+    }
+    <div class="ops">
+      @if (canCompleteCase(d)) {
+        <button type="button" (click)="completeCase()"><app-icon name="check" [size]="15" [stroke]="2.4" />{{ 'actions.done' | t }}</button>
+      }
+      @if (d.informationOnly && d.status !== 'COMPLETED' && d.status !== 'CANCELLED') {
+        <button type="button" (click)="markRead(d)">{{ d.read ? ('inbox.markUnread' | t) : ('inbox.markRead' | t) }}</button>
+      }
+      @if (d.canUndo) { <button type="button" class="ghost" (click)="undo(d)">{{ 'inbox.undoDone' | t }}</button> }
+      <div class="matter-menu" (keydown)="menuKey($event)" (focusout)="menuFocusOut($event)">
+        <button #moreButton type="button" class="ghost" aria-haspopup="menu" [attr.aria-expanded]="moreOpen()"
+          aria-controls="case-more-menu" (click)="toggleMore()" (keydown.arrowdown)="!moreOpen() && toggleMore()">
+          <span aria-hidden="true">⋯</span><span class="more-label"> {{ 'case.more' | t }}</span>
+        </button>
+        @if (moreOpen()) {
+          <div id="case-more-menu" class="more-menu" role="menu" [attr.aria-label]="'case.moreAria' | t">
+            @if (d.status !== 'COMPLETED' && d.status !== 'CANCELLED') {
+              <button type="button" role="menuitemcheckbox" [attr.aria-checked]="!!d.informationOnly" (click)="classify(d)">
+                <span class="menu-check" aria-hidden="true">{{ d.informationOnly ? '✓' : '' }}</span>
+                <span>{{ 'case.infoOnly' | t }}<small>{{ 'case.infoOnlyHint' | t }}</small></span>
+              </button>
+            }
+            <button type="button" role="menuitemcheckbox" [attr.aria-checked]="!!d.muted" (click)="toggleMute(d)">
+              <span class="menu-check" aria-hidden="true">{{ d.muted ? '✓' : '' }}</span>
+              <span>{{ 'case.mute' | t }}<small>{{ 'case.muteHint' | t }}</small></span>
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+  <a [routerLink]="nav.returnTree()" class="close" [attr.aria-label]="'case.close' | t" [title]="'case.close' | t"><app-icon name="x" [size]="16" /></a>
+</div>
+
+<div class="case-body">
+@if (error(); as msg) {
+  <p class="error">{{ msg }}</p>
+}
+@if (store.error(); as msg) { <p class="error">{{ msg }}</p> }
+@if (detail(); as d) {
+  <header class="case-head">
+    <h1>{{ d.title }}</h1>
+    <div class="kicker">
+      @if (showTag(d.status)) {
+        <span class="tag" [class]="tone(d.status)">{{ d.status | consequence }}</span>
+      }
+      @if (level(d.score); as n) { <span class="lvl"><app-importance [score]="d.score" />{{ 'score.' + n | t }}</span> }
+      @if (d.openedAt) {
+        <span>{{ 'case.opened' | t: { date: (d.openedAt | ldate: 'd MMM y') } }}</span>
+      }
+      @if (d.closedAt) {
+        <span>{{ 'case.closed' | t: { date: (d.closedAt | ldate: 'd MMM y') } }}</span>
+      }
+    </div>
+    @if (d.relevance; as r) {
+      <details class="relevance-note">
+        <summary>{{ (r.archived ? 'case.archivedOn' : 'case.archivesOn') | t: { date: (r.expiresAt | ldate: 'd MMM y') } }}</summary>
+        <p>{{ (r.assessment === 'ESTIMATED' ? 'case.relevanceEstimated' : 'case.relevanceUnknown') | t: { weeks: r.fallbackWeeks ?? 4 } }}</p>
+        <p>{{ r.reason }}</p>
+      </details>
+    }
+    @if (d.summary) {
+      <div class="summary-card">
+        <app-icon name="sparkle" [size]="18" />
+        <p class="conclusion">{{ d.summary }}</p>
+      </div>
+    }
+    @if (d.classificationReview) { <p class="warn">{{ 'case.reviewInfo' | t }}</p> }
+    @if (d.muted) {
+      <p class="muted">{{ 'case.mutedNote' | t }}</p>
+    }
+  </header>
+
+    <section class="block" [hidden]="d.informationOnly">
+      <div class="section-h">
+        <h2>{{ 'case.youNeed' | t }}</h2>
+        @if (!adding()) {
+          <button type="button" class="ghost" (click)="startAdd()">{{ 'case.addAction' | t }}</button>
+        }
+      </div>
+      @if (adding()) {
+        <div class="card add-action">
+          <label>
+            {{ 'case.actionTitle' | t }}
+            <input [(ngModel)]="draftTitle" />
+          </label>
+          <label>
+            {{ 'case.actionDue' | t }}
+            <input type="date" [(ngModel)]="draftDue" />
+          </label>
+          <div class="ops">
+            <button type="button" (click)="saveAdd(d.id)" [disabled]="!draftTitle.trim()">{{ 'common.save' | t }}</button>
+            <button type="button" class="ghost" (click)="cancelAdd()">{{ 'inbox.dismiss' | t }}</button>
+          </div>
+        </div>
+      }
+      <div class="item-list">
+        @for (a of openActions(d); track a.id) {
+          <article class="card item-card" [class.optional]="!mustDo(a.required)">
+            <div class="body">
+              @if (editingId() === a.id) {
+                <input [(ngModel)]="editTitle" />
+                <input type="date" [(ngModel)]="editDue" />
+                <div class="ops">
+                  <button type="button" (click)="saveEdit(a)">{{ 'common.save' | t }}</button>
+                  <button type="button" class="ghost" (click)="cancelEdit()">{{ 'inbox.dismiss' | t }}</button>
+                </div>
+              } @else {
+                <span class="title">{{ a.title }}</span>
+                @if (a.description) {
+                  <p class="lede">{{ a.description }}</p>
+                }
+                <div class="meta">
+                  @if (!mustDo(a.required)) {
+                    <span class="tag optional">{{ 'tag.optional' | t }}</span>
+                  }
+                  @if (a.dueAt) {
+                    <span>{{ 'actions.due' | t: { date: (a.dueAt | ldate: 'EEE d MMM') } }}</span>
+                  }
+                  @if (a.externalLink; as link) {
+                    <a [href]="link.url" [title]="link.kind === 'PORTAL' && link.provider !== 'SCHULMANAGER' ? ('actions.portalHint' | t) : ''" target="_blank" rel="noopener">{{ (link.kind === 'PORTAL' ? (link.provider === 'SCHULMANAGER' ? 'actions.openSchulmanager' : 'actions.openPortal') : 'case.openForm') | t }}</a>
+                  }
+                </div>
+              }
+            </div>
+            @if (editingId() !== a.id) {
+              <div class="row-tools">
+                <button type="button" class="icon" (click)="startEdit(a)" [attr.aria-label]="'common.save' | t">✎</button>
+                <button type="button" class="icon" (click)="removeAction(a)" [attr.aria-label]="'common.delete' | t">×</button>
+              </div>
+            }
+          </article>
+        }
+      </div>
+    </section>
+
+    <section class="block" [hidden]="d.informationOnly">
+      <div class="section-h">
+        <h2>{{ d.childName ? ('case.childNeeds' | t: { name: d.childName }) : ('case.childNeedsGeneric' | t) }}</h2>
+        @if (!addingNeed()) {
+          <button type="button" class="ghost" (click)="startAddNeed()">{{ 'case.addNeed' | t }}</button>
+        }
+      </div>
+      @if (addingNeed()) {
+        <div class="card add-action">
+          <label>
+            {{ 'case.actionTitle' | t }}
+            <input [(ngModel)]="draftNeed" />
+          </label>
+          <label>
+            {{ 'case.actionDue' | t }}
+            <input type="date" [(ngModel)]="draftNeedOn" />
+          </label>
+          <div class="ops">
+            <button type="button" (click)="saveAddNeed(d.id)" [disabled]="!draftNeed.trim()">{{ 'common.save' | t }}</button>
+            <button type="button" class="ghost" (click)="cancelAddNeed()">{{ 'inbox.dismiss' | t }}</button>
+          </div>
+        </div>
+      }
+      <div class="item-list">
+        @for (r of openRequirements(d); track r.id) {
+          <article class="card item-card" [class.optional]="!mustDo(r.required)">
+            <div class="body">
+              @if (editingId() === r.id) {
+                <input [(ngModel)]="editTitle" />
+                <input type="date" [(ngModel)]="editDue" />
+                <div class="ops">
+                  <button type="button" (click)="saveEditNeed(r)">{{ 'common.save' | t }}</button>
+                  <button type="button" class="ghost" (click)="cancelEdit()">{{ 'inbox.dismiss' | t }}</button>
+                </div>
+              } @else {
+                <span class="title">{{ r.description }}</span>
+                <div class="meta">
+                  @if (!mustDo(r.required)) {
+                    <span class="tag optional">{{ 'tag.optional' | t }}</span>
+                  }
+                  @if (r.relevantOn) {
+                    <span>{{ 'case.on' | t: { date: r.relevantOn } }}</span>
+                  }
+                </div>
+              }
+            </div>
+            @if (editingId() !== r.id) {
+              <div class="row-tools">
+                <button type="button" class="icon" (click)="startEditNeed(r)" [attr.aria-label]="'common.save' | t">✎</button>
+                <button type="button" class="icon" (click)="removeNeed(r)" [attr.aria-label]="'common.delete' | t">×</button>
+              </div>
+            }
+          </article>
+        }
+      </div>
+    </section>
+
+  @if (openEvents(d).length) {
+    <section class="block">
+      <div class="section-h"><h2>{{ 'case.onCalendar' | t }}</h2></div>
+      <div class="item-list">
+        @for (e of openEvents(d); track e.id) {
+          <article class="card item-card">
+            <span class="title">{{ e.title }}</span>
+            <div class="meta">
+              <span>{{ e.startTime | ldate: 'EEE d MMM y' }}</span>
+              @if (!e.allDay) {
+                <span>{{ e.startTime | ldate: 'HH:mm' }}</span>
+              }
+              @if (e.location) {
+                <span>{{ e.location }}</span>
+              }
+              @if (e.status === 'CANCELLED' || e.status === 'MOVED') {
+                <span class="tag check">{{ e.status === 'MOVED' ? ('tag.moved' | t) : ('tag.cancelled' | t) }}</span>
+              }
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  }
+
+  @if (d.externalForms.length) {
+    <section class="block">
+      <div class="section-h"><h2>{{ 'case.forms' | t }}</h2></div>
+      <div class="item-list">
+        @for (f of d.externalForms; track f.id) {
+          <article class="card item-card">
+            @if (f.externalLink; as link) {
+              <a class="title" [href]="link.url" target="_blank" rel="noopener">{{ 'case.openPage' | t }}</a>
+            } @else {
+              <span class="title">{{ 'case.detectedForm' | t }}</span>
+            }
+            <div class="meta">
+              @if (f.deadline) {
+                <span>{{ 'case.deadline' | t }} {{ f.deadline | ldate: 'd MMM y' }}</span>
+              }
+              @if (f.requiresConsent) {
+                <span>{{ 'case.consent' | t }}</span>
+              }
+              @if (f.requiresPayment) {
+                <span>{{ 'case.payment' | t }}</span>
+              }
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  }
+
+  <div class="reader-tabs">
+    <button type="button" class="ghost" [attr.aria-pressed]="readerMode() === 'summary'" (click)="extendedSummary()">{{ hasEmail(d) ? 'Conversation summary' : 'Detailed summary' }}</button>
+    @if (reading()) {
+      <button type="button" class="ghost" [attr.aria-pressed]="readerMode() === 'translation'" (click)="readerMode.set('translation')">Full translation</button>
+      <button type="button" class="ghost" [attr.aria-pressed]="readerMode() === 'original'" (click)="readerMode.set('original')">Original text</button>
+    }
+  </div>
+  @if (readerError(); as msg) { <p class="error" role="alert">{{ msg }}</p> }
+  @if (readerMode() === 'summary') {
+    <section class="reader card">
+      @if (summaryBusy()) { <p class="muted">Preparing detailed summary…</p> }
+      @if (summary(); as result) {
+        <p class="muted">AI summary · {{ result.sourceIds.length }} sources. Check the original for exact wording.</p>
+        @if (result.partial) { <p class="warn">Some sources may be incomplete or too long. Check the originals for omitted text.</p> }
+        <app-document-text [text]="result.text" />
+      }
+    </section>
+  } @else if (readingBusy()) {
+    <section class="reader card">
+      <p class="muted">{{ 'case.reading' | t }}</p>
+    </section>
+  } @else if (reading(); as r) {
+    <section class="reader card">
+      <header class="reader-head">
+        <div>
+          <h2>{{ r.title ?? ('case.schoolSent' | t) }}</h2>
+          <p class="muted">
+            {{ r.sourceType | label }}
+            @if (r.sender) {
+              · {{ r.sender }}
+            }
+            @if (r.translated) {
+              · {{ 'case.translatedNote' | t: { lang: langName(r.language) } }}
+            }
+          </p>
+        </div>
+        <button type="button" class="ghost" (click)="closeReading()">{{ 'case.closeRead' | t }}</button>
+      </header>
+      @if (r.notice) { <p class="warn">{{ r.notice }}</p> }
+      @if (r.translatedText) {
+        <app-document-text [text]="(readerMode() === 'original' ? r.originalText : r.translatedText) ?? ''" />
+      } @else {
+        <p class="muted">{{ 'case.noText' | t }}</p>
+      }
+      @if (r.canonicalUrl) {
+        <p><a [href]="r.canonicalUrl" target="_blank" rel="noopener">{{ 'case.openWebpage' | t }}</a></p>
+      }
+    </section>
+  }
+
+  @if (hasEmail(d)) { <app-email-thread [caseId]="d.id" /> }
+
+  @if (d.sources.length) {
+    <section class="block">
+      <div class="section-h"><h2>{{ 'case.schoolSent' | t }}</h2></div>
+      <div class="item-list">
+        @for (s of d.sources; track s.id) {
+          <article class="card item-card">
+            <span class="title">{{ s.title ?? s.externalId }}</span>
+            <div class="meta">
+              <span>{{ s.sourceType | label }}</span>
+              @if (s.sender) {
+                <span>{{ s.sender }}</span>
+              }
+              @if (s.forwardedBy) { <span>Forwarded by {{ s.forwardedBy }}</span> }
+              @if (s.receivedAt) {
+                <span>{{ s.receivedAt | ldate: 'd MMM y' }}</span>
+              }
+            </div>
+            <div class="ops">
+              <button type="button" (click)="readSource(s.id)" [disabled]="readingBusy() && readingId() === s.id">
+                {{ readingId() === s.id && readingBusy() ? ('case.reading' | t) : 'Full translation' }}
+              </button>
+              <button type="button" class="ghost" (click)="downloadOriginal(s.id)">Download original</button>
+              @if (s.canonicalUrl) {
+                <a class="btn ghost" [href]="s.canonicalUrl" target="_blank" rel="noopener">{{ 'case.openWebpage' | t }}</a>
+              }
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  }
+
+  @if (d.evidence.length) {
+    <details class="disclose">
+      <summary>{{ 'case.whereFrom' | t }}</summary>
+      <ol class="chain">
+        @for (ev of d.evidence; track ev.id) {
+          <li>{{ ev.subject }}</li>
+        }
+      </ol>
+    </details>
+  }
+
+  <details class="disclose">
+    <summary>{{ 'case.how' | t }}</summary>
+    @if (!d.investigationComplete) {
+      <p class="muted">{{ 'case.investIncomplete' | t }}</p>
+    }
+
+    <div class="feedback">
+      <span class="muted">{{ 'case.wasRight' | t }}</span>
+      <button type="button" class="ghost" (click)="feedback('IRRELEVANT')">{{ 'case.fb.IRRELEVANT' | t }}</button>
+      <button type="button" class="ghost" (click)="feedback('NOT_IMPORTANT')">{{ 'case.fb.NOT_IMPORTANT' | t }}</button>
+      <button type="button" class="ghost" (click)="feedback('MISSING_ACTION')">{{ 'case.fb.MISSING_ACTION' | t }}</button>
+      <button type="button" class="ghost" (click)="feedback('WRONG_DATE')">{{ 'case.fb.WRONG_DATE' | t }}</button>
+      <button type="button" class="ghost" (click)="feedback('ALWAYS_NOTIFY')">{{ 'case.fb.ALWAYS_NOTIFY' | t }}</button>
+      <button type="button" class="ghost" (click)="reprocess()">{{ 'case.askAi' | t }}</button>
+    </div>
+
+    @if (d.changes.length) {
+      <h3>{{ 'case.changed' | t }}</h3>
+      <ul class="quiet-list">
+        @for (ch of d.changes; track ch.id) {
+          <li>
+            {{ ch.changeType | label }}
+            <span class="muted">{{ ch.createdAt | ldate: 'd MMM HH:mm' }}</span>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (d.statusHistory.length) {
+      <h3>{{ 'case.statusHistory' | t }}</h3>
+      <ol class="quiet-list">
+        @for (h of d.statusHistory; track h.id) {
+          <li>
+            {{ h.toStatus | consequence }}
+            <span class="muted">{{ h.createdAt | ldate: 'd MMM y HH:mm' }} · {{ h.actor | label }}</span>
+          </li>
+        }
+      </ol>
+    }
+
+    @if (d.investigations.length) {
+      <h3>{{ 'case.investigations' | t }}</h3>
+      @for (inv of d.investigations; track inv.id) {
+        <details>
+          <summary>
+            {{ 'case.pages' | t: { n: inv.pagesVisited } }} · {{ 'case.aiCalls' | t: { n: inv.aiCalls } }}
+            · {{ inv.startedAt | ldate: 'd MMM HH:mm' }}
+          </summary>
+          <ul class="quiet-list">
+            @for (st of inv.steps; track st.id) {
+              <li [class.fail]="st.outcome === 'FAILED'">{{ st.stepType | label }} → {{ st.target }}</li>
+            }
+          </ul>
+        </details>
+      }
+    }
+  </details>
+}
+</div>

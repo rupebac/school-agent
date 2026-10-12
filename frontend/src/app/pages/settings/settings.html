@@ -1,0 +1,566 @@
+<div class="set">
+  <aside class="set-nav" aria-label="Settings sections">
+    <button type="button" [class.on]="area() === 'school'" (click)="setArea('school')">
+      {{ 'set.area.school' | t }}
+      <span>{{ 'set.area.schoolHint' | t }}</span>
+    </button>
+    <button type="button" [class.on]="area() === 'you'" (click)="setArea('you')">
+      {{ 'set.area.you' | t }}
+      <span>{{ 'set.area.youHint' | t }}</span>
+    </button>
+    <button type="button" [class.on]="area() === 'family'" (click)="setArea('family')">
+      {{ 'set.area.family' | t }}
+      <span>{{ 'set.area.familyHint' | t }}</span>
+    </button>
+  </aside>
+
+  <div class="set-body">
+    @if (banner(); as b) {
+      <div class="card banner">{{ b }}</div>
+    }
+
+    @switch (area()) {
+      @case ('school') {
+        <header class="area-head">
+          <div>
+            <h1>{{ 'set.school.title' | t }}</h1>
+            <p class="muted">{{ 'set.school.lede' | t }}</p>
+          </div>
+          @if (kidsStore.kids().length) {
+            <label class="kid-for">
+              {{ 'set.school.for' | t }}
+              <select [ngModel]="settingsKidId()" (ngModelChange)="selectKid($event)">
+                @for (k of kidsStore.kids(); track k.id) {
+                  <option [value]="k.id">{{ k.name }}{{ k.school ? ' — ' + k.school : '' }}</option>
+                }
+              </select>
+            </label>
+          }
+        </header>
+
+        @if (kidsStore.kids().length === 0) {
+          <p class="card warn-card">
+            {{ 'set.school.noKids' | t }}
+            @if (auth.isAdmin) {
+              <button type="button" class="ghost" (click)="setArea('family')">{{ 'set.area.family' | t }}</button>
+            }
+          </p>
+        } @else {
+          <div class="conn-grid">
+            <button type="button" class="conn" [class.open]="panel() === 'google'" (click)="togglePanel('google')">
+              <header>
+                <h2>{{ 'set.google.h' | t }}</h2>
+                <span class="pill" [class.ok]="google.status()?.connected" [class.warn]="google.status() && !google.status()?.connected">
+                  {{ google.status()?.connected ? ('set.conn.connected' | t) : ('set.conn.missing' | t) }}
+                </span>
+              </header>
+              <p>{{ 'set.conn.google.lede' | t }}</p>
+            </button>
+            <button type="button" class="conn" [class.open]="panel() === 'calendar'" [disabled]="!google.status()?.connected" (click)="togglePanel('calendar')">
+              <header>
+                <h2>{{ 'set.cal.h' | t }}</h2>
+                <span class="pill" [class.ok]="google.calendar() && !google.calendar()?.configuredIsPrimary" [class.warn]="!google.status()?.connected || google.calendar()?.configuredIsPrimary">
+                  {{ !google.status()?.connected ? ('set.cal.needsGoogle' | t) : (google.calendar()?.configuredIsPrimary ? ('set.conn.configure' | t) : ('set.conn.connected' | t)) }}
+                </span>
+              </header>
+              <p>{{ 'set.conn.calendar.lede' | t }}</p>
+            </button>
+            <button type="button" class="conn" [class.open]="panel() === 'portal'" (click)="togglePanel('portal')">
+              <header>
+                <h2>School portal</h2>
+                <span class="pill" [class.ok]="portal.status()?.configured" [class.warn]="portal.status() && !portal.status()?.configured">
+                  {{ portal.status()?.configured ? ('set.conn.connected' | t) : ('set.conn.missing' | t) }}
+                </span>
+              </header>
+              <p>{{ portal.status()?.provider === 'SCHULMANAGER' ? 'Schulmanager Online' : portal.status()?.provider === 'ELTERNPORTAL' ? 'Elternportal' : 'Choose the school system for this child' }}</p>
+            </button>
+          </div>
+
+          @if (panel() === 'google') {
+            <section class="card editor">
+              <h2>{{ 'set.google.h' | t }} — {{ settingsKid()?.name }}</h2>
+              @if (google.status()?.mailbox; as mailbox) { <p>Connected mailbox: <strong>{{ mailbox }}</strong></p> }
+              <p class="muted">Connect this child’s Google mailbox. Forward school emails for this child here; they appear as Email with the original message and attachments. Use a school-only forwarding filter.</p>
+              @if (google.error(); as err) {
+                <p class="error">{{ err }}</p>
+              }
+              @if (google.status(); as s) {
+                @if (!s.clientConfigured) {
+                  <p class="warn">{{ 'set.google.serverMissing' | t }}</p>
+                } @else if (s.connected) {
+                  <p class="ok">{{ 'set.google.connected' | t }}</p>
+                  <p class="muted">{{ s.pollingEnabled ? ('set.google.pollingOn' | t) : ('set.google.pollingOff' | t) }}</p>
+                  <button type="button" class="ghost" (click)="google.disconnect(settingsKidId())" [disabled]="google.busy()">
+                    {{ 'set.google.disconnect' | t }}
+                  </button>
+                } @else {
+                  <button type="button" (click)="connect()" [disabled]="!s.authorizeUrl">{{ 'set.google.connect' | t }}</button>
+                }
+              } @else {
+                <p class="muted">{{ 'common.loading' | t }}</p>
+              }
+            </section>
+          }
+
+          @if (panel() === 'google' && settingsKidId()) { <app-school-email-settings [kid]="settingsKidId()!" /> }
+
+          @if (panel() === 'calendar') {
+            <section class="card editor">
+              <h2>{{ 'set.cal.h' | t }} — {{ settingsKid()?.name }}</h2>
+              @if (google.calendar(); as cal) {
+                @if (cal.configuredIsPrimary) {
+                  <p class="warn">{{ 'set.cal.primary' | t: { name: settingsKid()?.name ?? ('set.thisChild' | t) } }}</p>
+                } @else {
+                  <p class="ok">{{ 'set.cal.ready' | t: { name: cal.expectedName } }}</p>
+                }
+                @if (cal.schoolCalendarFound) {
+                  @if (cal.configuredIsPrimary) {
+                    <button type="button" (click)="createCalendar()" [disabled]="google.busy()">{{ 'set.cal.adopt' | t }}</button>
+                  }
+                } @else {
+                  <p>{{ 'set.cal.missing' | t: { name: cal.expectedName } }}</p>
+                  <label>
+                    {{ 'set.cal.share' | t }}
+                    <input type="text" [(ngModel)]="shareWith" placeholder="parent@example.org" [disabled]="google.busy()" />
+                  </label>
+                  <button type="button" (click)="createCalendar()" [disabled]="google.busy()">
+                    {{ google.busy() ? ('set.cal.creating' | t) : ('set.cal.create' | t) }}
+                  </button>
+                }
+              } @else {
+                <p class="muted">{{ 'set.cal.needsGoogle' | t }}</p>
+              }
+            </section>
+          }
+
+          @if (panel() === 'portal') {
+            <section class="card editor">
+              <h2>School portal — {{ settingsKid()?.name }}</h2>
+              @if (portal.status()?.lastSync) {
+                <p class="muted">{{ 'set.portal.last' | t: { when: (portal.status()!.lastSync | ldate: 'dd.MM.yyyy HH:mm') } }}</p>
+              } @else {
+                <p class="muted">{{ 'set.portal.never' | t }}</p>
+              }
+              @if (portal.status()?.sections?.length) {
+                <ul class="portal-sections">
+                  @for (section of portal.status()!.sections; track section.kind) {
+                    <li><strong>{{ ('school.section.' + section.kind) | t }}</strong>
+                      <span [class.error]="section.status === 'FAILED'">{{ ('school.section.' + section.status) | t }}@if (section.status === 'AVAILABLE') { · {{ 'school.section.records' | t: { count: section.records } }} }</span>
+                      @if (section.message) { <small class="section-reason">{{ section.message }}</small> }
+                    </li>
+                  }
+                </ul>
+              }
+              <label>School system
+                <select [ngModel]="portalProvider" (ngModelChange)="changePortalProvider($event)" [disabled]="portal.busy()">
+                  <option value="ELTERNPORTAL">Elternportal</option>
+                  <option value="SCHULMANAGER">Schulmanager Online</option>
+                </select>
+              </label>
+              <p class="muted">One school portal per child. Saving another provider replaces this child’s connection; imported letters remain available.</p>
+              @if (portalProvider === 'ELTERNPORTAL') {
+                <label>{{ 'set.portal.url' | t }}
+                  <input type="url" [(ngModel)]="portalUrl" placeholder="https://school.eltern-portal.org" [disabled]="portal.busy()" />
+                </label>
+              }
+              <label>{{ 'set.portal.user' | t }}
+                <input type="text" [(ngModel)]="portalUser" (ngModelChange)="portalCredentialsChanged()" autocomplete="off" [disabled]="portal.busy()" />
+              </label>
+              <label>{{ 'set.portal.password' | t }}
+                <input type="password" [(ngModel)]="portalPassword" (ngModelChange)="portalCredentialsChanged()" autocomplete="new-password" spellcheck="false" [disabled]="portal.busy()"
+                  [placeholder]="portal.status()?.hasPassword && portalProvider === portal.status()?.provider ? 'Saved — leave blank to keep' : ''" />
+              </label>
+              @if (portalProvider === 'SCHULMANAGER') {
+                <button type="button" class="ghost" [disabled]="portal.busy() || !portalUser" (click)="discoverPortal()">Find children in this account</button>
+                @if (portalIdentity; as identity) {
+                  <label>Schulmanager child linked to {{ settingsKid()?.name }}
+                    <select [(ngModel)]="portalStudentId" [disabled]="portal.busy()">
+                      <option value="">Choose a child</option>
+                      @for (student of identity.students; track student.id) {
+                        <option [value]="student.id">{{ student.name }}{{ student.className ? ' — ' + student.className : '' }}</option>
+                      }
+                    </select>
+                  </label>
+                  @if (!identity.students.length) { <p class="warn">No children were found in this account.</p> }
+                }
+                <p class="muted">Imports letters and attachments. Reading here does not confirm receipt or submit school forms.</p>
+              }
+              <div class="actions">
+                <button type="button" [disabled]="!canSavePortal()" (click)="savePortal()">{{ 'common.save' | t }}</button>
+                <button type="button" class="ghost" [disabled]="portal.busy() || !portalMatchesSaved()" (click)="portal.test(settingsKidId())">{{ 'set.portal.test' | t }}</button>
+                <button type="button" class="ghost" [disabled]="portal.busy() || !portalMatchesSaved()" (click)="portal.sync(settingsKidId())">{{ 'set.portal.sync' | t }}</button>
+              </div>
+              @if (portal.message(); as m) {
+                <p class="muted">{{ m }}</p>
+              }
+            </section>
+          }
+
+
+        }
+      }
+
+      @case ('you') {
+        <app-install />
+        <header class="area-head">
+          <div>
+            <h1>{{ 'set.you.title' | t }}</h1>
+            <p class="muted">{{ 'set.you.lede' | t }}</p>
+          </div>
+        </header>
+        <section class="card editor">
+          <p class="who">{{ 'set.you.signedIn' | t: { name: auth.me()?.displayName || auth.me()?.name || '' } }}</p>
+          <label>
+            {{ 'set.account.language' | t }}
+            <select [ngModel]="i18n.lang()" (ngModelChange)="setLanguage($event)">
+              <option value="en">{{ 'nav.langEn' | t }}</option>
+              <option value="es">{{ 'nav.langEs' | t }}</option>
+            </select>
+          </label>
+          <p class="muted">{{ 'set.account.intro' | t }}</p>
+          <label>
+            {{ 'set.you.phone' | t }}
+            <input type="text" [(ngModel)]="myWhatsapp" placeholder="+49…" />
+          </label>
+          <p class="muted">{{ 'set.you.phoneHint' | t }}</p>
+          <div class="actions">
+            <button type="button" (click)="saveMyWhatsapp()">{{ 'common.save' | t }}</button>
+          </div>
+          <h2>{{ 'set.account.changePw' | t }}</h2>
+          <div class="pw-grid">
+            <label>{{ 'set.account.oldPw' | t }} <input type="password" [(ngModel)]="oldPassword" autocomplete="current-password" /></label>
+            <label>{{ 'set.account.newPw' | t }} <input type="password" [(ngModel)]="newPassword" autocomplete="new-password" /></label>
+            <label>{{ 'set.account.repeatPw' | t }} <input type="password" [(ngModel)]="newPasswordRepeat" autocomplete="new-password" /></label>
+          </div>
+          <div class="actions">
+            <button type="button" [disabled]="!oldPassword || newPassword.length < 8" (click)="changePassword()">
+              {{ 'set.account.changePw' | t }}
+            </button>
+          </div>
+          @if (pwMessage(); as m) {
+            <p class="muted">{{ m }}</p>
+          }
+        </section>
+      }
+
+      @case ('family') {
+        <header class="area-head">
+          <div>
+            <h1>{{ 'set.family.title' | t }}</h1>
+            <p class="muted">{{ 'set.family.lede' | t }}</p>
+          </div>
+        </header>
+
+        <section class="card editor">
+          <h2>{{ 'set.archive.h' | t }}</h2>
+          <p class="muted" id="archive-help">{{ 'set.archive.help' | t }}</p>
+          <label class="archive-period">{{ 'set.archive.period' | t }}
+            <span><input type="number" min="1" max="52" step="1" [(ngModel)]="archiveWeeks" aria-describedby="archive-help archive-range" [disabled]="!auth.isAdmin || !archiveLoaded() || archiveBusy()" />{{ 'set.archive.weeks' | t }}</span>
+          </label>
+          <small class="muted" id="archive-range">{{ 'set.archive.range' | t }}</small>
+          @if (auth.isAdmin) {
+            <div class="actions"><button type="button" (click)="saveArchive()" [disabled]="!archiveLoaded() || archiveBusy() || !validArchiveWeeks()">{{ 'common.save' | t }}</button></div>
+          }
+          @if (archiveMessage(); as m) { <p class="ok" role="status">{{ m }}</p> }
+          @if (archiveError(); as m) { <p class="error" role="alert">{{ m }}</p> }
+        </section>
+
+        <section class="card editor">
+          <h2>{{ 'set.kids.h' | t }}</h2>
+          <p class="muted">{{ 'set.kids.intro' | t }}</p>
+          <div class="people-grid">
+            @for (k of (auth.isAdmin ? adminKids() : kidsStore.kids()); track k.id) {
+              <article class="person">
+                <span class="kid-dot" [style.background]="k.color"></span>
+                <div class="grow">
+                  <strong>{{ k.name }}</strong>
+                  <p class="muted">{{ k.school }} {{ k.className }}</p>
+                </div>
+                <button type="button" class="ghost" (click)="goToSchool(k.id)">{{ 'set.family.setupSchool' | t }}</button>
+                @if (auth.isAdmin) {
+                  <button type="button" class="ghost" (click)="deleteKid(k)">{{ 'common.delete' | t }}</button>
+                }
+              </article>
+            }
+          </div>
+          @if (auth.isAdmin) {
+            @if (!addingKid()) {
+              <button type="button" class="ghost" (click)="addingKid.set(true)">{{ 'set.family.addChild' | t }}</button>
+            } @else {
+              <div class="pw-grid">
+                <label>{{ 'set.kids.name' | t }} <input type="text" [(ngModel)]="newKid.name" /></label>
+                <label>{{ 'set.kids.school' | t }} <input type="text" [(ngModel)]="newKid.school" /></label>
+                <label>{{ 'set.kids.class' | t }} <input type="text" [(ngModel)]="newKid.className" /></label>
+                <label>{{ 'set.kids.accounts' | t }} <input type="text" [(ngModel)]="newKid.accountNames" placeholder="parent-login, other-parent-login" /></label>
+              </div>
+              <div class="actions">
+                <button type="button" [disabled]="newKid.name.length < 2" (click)="addKid()">{{ 'set.kids.add' | t }}</button>
+                <button type="button" class="ghost" (click)="addingKid.set(false)">{{ 'common.cancel' | t }}</button>
+              </div>
+            }
+          }
+        </section>
+
+        @if (auth.isAdmin) {
+          <section class="card editor">
+            <h2>{{ 'set.people.h' | t }}</h2>
+            <p class="muted">{{ 'set.people.intro' | t }}</p>
+            <div class="people-grid">
+              @for (u of adminUsers(); track u.id) {
+                <article class="person stack">
+                  <div class="person-top">
+                    <strong>{{ u.displayName || u.name }}</strong>
+                    <span class="pill">{{ u.role === 'ADMIN' ? ('set.people.admin' | t) : ('set.people.parent' | t) }}</span>
+                  </div>
+                  <p class="muted">{{ u.name }}</p>
+                  <label>{{ 'set.people.display' | t }} <input type="text" [(ngModel)]="u.displayName" /></label>
+                  <label>{{ 'set.people.role' | t }}
+                    <select [(ngModel)]="u.role">
+                      <option value="PARENT">{{ 'set.people.parent' | t }}</option>
+                      <option value="ADMIN">{{ 'set.people.admin' | t }}</option>
+                    </select>
+                  </label>
+                  <label>{{ 'set.you.phone' | t }} <input type="text" [(ngModel)]="u.whatsappNumber" placeholder="+49…" /></label>
+                  <label>{{ 'set.people.language' | t }}
+                    <select [(ngModel)]="u.language">
+                      <option value="en">{{ 'nav.langEn' | t }}</option>
+                      <option value="es">{{ 'nav.langEs' | t }}</option>
+                    </select>
+                  </label>
+                  <div class="actions">
+                    <button type="button" (click)="updateUser(u)">{{ 'common.save' | t }}</button>
+                    <button type="button" class="ghost" (click)="deleteUser(u)">{{ 'common.delete' | t }}</button>
+                  </div>
+                </article>
+              }
+            </div>
+            @if (accountsMessage(); as m) {
+              <p class="muted">{{ m }}</p>
+            }
+            @if (!addingUser()) {
+              <button type="button" class="ghost" (click)="addingUser.set(true)">{{ 'set.family.addPerson' | t }}</button>
+            } @else {
+              <div class="pw-grid">
+                <label>{{ 'set.people.username' | t }} <input type="text" [(ngModel)]="newUser.name" /></label>
+                <label>{{ 'set.people.display' | t }} <input type="text" [(ngModel)]="newUser.displayName" /></label>
+                <label>{{ 'set.people.password' | t }} <input type="text" [(ngModel)]="newUser.password" autocomplete="off" /></label>
+                <label>{{ 'set.people.role' | t }}
+                  <select [(ngModel)]="newUser.role">
+                    <option value="PARENT">{{ 'set.people.parent' | t }}</option>
+                    <option value="ADMIN">{{ 'set.people.admin' | t }}</option>
+                  </select>
+                </label>
+                <label>{{ 'set.you.phone' | t }} <input type="text" [(ngModel)]="newUser.whatsappNumber" /></label>
+                <label>{{ 'set.people.language' | t }}
+                  <select [(ngModel)]="newUser.language">
+                    <option value="en">{{ 'nav.langEn' | t }}</option>
+                    <option value="es">{{ 'nav.langEs' | t }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="actions">
+                <button type="button" [disabled]="!newUser.name || newUser.password.length < 8" (click)="addUser()">{{ 'set.people.create' | t }}</button>
+                <button type="button" class="ghost" (click)="addingUser.set(false)">{{ 'common.cancel' | t }}</button>
+              </div>
+            }
+          </section>
+        }
+
+        <section class="card editor">
+          <h2>{{ 'set.rules.h' | t }}</h2>
+          <p class="muted">{{ 'set.rules.intro' | t }}</p>
+          @for (r of rules(); track r.id) {
+            <div class="rule">
+              <label class="remember">
+                <input type="checkbox" [(ngModel)]="r.enabled" (change)="toggleRule(r)" />
+                <span>{{ r.text }}</span>
+              </label>
+              <button type="button" class="ghost" (click)="deleteRule(r)">{{ 'set.rules.remove' | t }}</button>
+            </div>
+          }
+          @if (rules().length === 0) {
+            <p class="muted">{{ 'set.rules.empty' | t }}</p>
+          }
+          <label class="wide">
+            {{ 'set.rules.instruction' | t }}
+            <input type="text" [(ngModel)]="newRule.text" [placeholder]="'set.rules.placeholder' | t" />
+          </label>
+          <div class="actions">
+            <button type="button" [disabled]="!newRule.text" (click)="addRule()">{{ 'set.rules.add' | t }}</button>
+          </div>
+          @if (policyMessage(); as m) {
+            <p class="muted">{{ m }}</p>
+          }
+        </section>
+
+            <section class="card editor">
+              <h2>{{ 'set.wa.h' | t }} — Family</h2>
+              <p class="muted">One WhatsApp connection for all children. New-letter messages name the child; briefings clearly group school matters by child and date. Each parent chooses their own number and notification preferences.</p>
+              @if (whatsapp.status(); as s) {
+                <p class="muted">
+                  {{ s.lastWebhookAt ? ('set.wa.last' | t: { when: (s.lastWebhookAt | ldate: 'dd.MM.yyyy HH:mm') }) : ('set.wa.noneYet' | t) }}
+                </p>
+                <div class="callback">
+                  <code>{{ s.webhookUrl }}</code>
+                  <button type="button" class="ghost" (click)="copyWebhook()">{{ 'set.wa.copy' | t }}</button>
+                </div>
+              }
+              <p class="muted">{{ 'set.wa.numbersNote' | t }}</p>
+              <p class="muted">{{ 'set.wa.templateHint' | t }}</p>
+              @if (whatsapp.status()?.templates?.length) {
+                <details>
+                  <summary>{{ 'set.wa.templatesSummary' | t: { ready: whatsapp.approved(), total: whatsapp.status()!.templates!.length } }}</summary>
+                  <p class="muted">{{ 'set.wa.approvalHint' | t }}</p>
+                  <ul class="muted">
+                    @for (template of whatsapp.status()!.templates!; track template.name + template.language) {
+                      <li>{{ template.name }} ({{ template.language }}): {{ template.status }}
+                        @if (template.error) { <span> — {{ template.error }}</span> }
+                      </li>
+                    }
+                  </ul>
+                </details>
+              }
+              @if (whatsapp.status()?.deliveries?.length) {
+                <details>
+                  <summary>{{ 'set.wa.deliveries' | t }}</summary>
+                  <p class="muted">{{ 'set.wa.deliveryHint' | t }}</p>
+                  @for (delivery of whatsapp.status()!.deliveries!; track $index) {
+                    <details>
+                      <summary>{{ delivery.recipient }} · {{ ('wa.delivery.' + delivery.status) | t }} · {{ delivery.createdAt | ldate: 'dd MMM HH:mm' }}</summary>
+                      <p style="white-space: pre-wrap; overflow-wrap: anywhere">{{ delivery.message }}</p>
+                      @if (delivery.error) { <p>{{ delivery.error }}</p> }
+                      @if (delivery.nextAttemptAt) { <p class="muted">{{ 'set.wa.retryAt' | t: { when: (delivery.nextAttemptAt | ldate: 'dd MMM HH:mm') } }}</p> }
+                      @if (!delivery.tracked && delivery.status === 'SENT') { <p class="muted">{{ 'set.wa.legacyDelivery' | t }}</p> }
+                    </details>
+                  }
+                </details>
+              }
+              <div class="actions">
+                <label class="test-to">
+                  {{ 'set.wa.sendTest' | t }}
+                  <select [(ngModel)]="testTo">
+                    @for (r of whatsapp.status()?.recipients ?? []; track r.name) {
+                      <option [value]="r.name" [disabled]="!r.number">
+                        {{ r.displayName }}{{ r.number ? ' — ' + r.number : ('set.wa.noNumber' | t) }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                <button type="button" class="ghost" [disabled]="whatsapp.busy() || !canTest()" (click)="whatsapp.test(whatsappKid(), testTo)">
+                  {{ 'set.wa.test' | t }}
+                </button>
+                <button type="button" class="ghost" [disabled]="whatsapp.busy()" (click)="whatsapp.subscribeWaba(whatsappKid())">
+                  {{ 'set.wa.attach' | t }}
+                </button>
+                <button type="button" class="ghost" [disabled]="whatsapp.busy()" (click)="whatsapp.syncTemplates(whatsappKid())">
+                  {{ 'set.wa.syncTemplates' | t }}
+                </button>
+              </div>
+              <details>
+                <summary>{{ 'set.wa.technical' | t }}</summary>
+                <div class="pw-grid">
+                  <label>{{ 'set.wa.apiUrl' | t }} <input type="url" [(ngModel)]="wa.apiUrl" /></label>
+                  <label>{{ 'set.wa.phoneId' | t }} <input type="text" [(ngModel)]="wa.phoneNumberId" /></label>
+                  <label>{{ 'set.wa.waba' | t }} <input type="text" [(ngModel)]="wa.wabaId" /></label>
+                  <label class="wide">{{ 'set.wa.graphToken' | t }} <textarea rows="3" [(ngModel)]="wa.token" class="secret" autocomplete="off" spellcheck="false"></textarea></label>
+                  <label class="wide">{{ 'set.wa.verifyField' | t }} <input type="text" [(ngModel)]="wa.verifyToken" class="secret" autocomplete="off" /></label>
+                  <label class="wide">{{ 'set.wa.appSecret' | t }} <input type="text" [(ngModel)]="wa.appSecret" class="secret" autocomplete="off" /></label>
+                  <label>{{ 'set.wa.frontend' | t }} <input type="url" [(ngModel)]="wa.frontendUrl" /></label>
+                </div>
+                <button type="button" (click)="saveWhatsapp()" [disabled]="whatsapp.busy() || !whatsapp.status()">{{ 'common.save' | t }}</button>
+              </details>
+              @if (whatsapp.message(); as m) {
+                <p class="muted">{{ m }}</p>
+              }
+            </section>
+
+        <details class="card editor ai-box">
+          <summary>{{ 'set.ai.h' | t }}</summary>
+          @if (aiUsage(); as u) {
+            <p class="muted">{{ 'set.family.aiSummary' | t: { calls: u.totalCalls, in: u.inputTokens, out: u.outputTokens } }}</p>
+          }
+          <p class="muted">Shared AI models for all children. {{ 'set.ai.intro' | t }}</p>
+          <div class="model-rows">
+            @for (m of models(); track m.role) {
+              <div class="model-row">
+                <strong>{{ m.role | label }}</strong>
+                <input type="text" [(ngModel)]="m.modelName" />
+                <label class="remember">
+                  <input type="checkbox" [(ngModel)]="m.enabled" /> {{ 'set.ai.enabled' | t }}
+                </label>
+                <button type="button" class="ghost" (click)="saveModel(m)">{{ 'common.save' | t }}</button>
+              </div>
+            }
+          </div>
+        </details>
+
+        <details class="card editor">
+          <summary>{{ 'set.briefing.h' | t }}</summary>
+          <p class="muted">{{ 'set.briefing.intro' | t }}</p>
+          @if (preferences.prefs(); as p) {
+            <div class="briefing-grid">
+              <label class="toggle-row span-2">
+                <input type="checkbox" [(ngModel)]="p.instantEnabled" />
+                <span>{{ 'set.briefing.instant' | t }}</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" [(ngModel)]="p.briefingEnabled" />
+                <span>{{ 'set.briefing.daily' | t }}</span>
+              </label>
+              <label>
+                {{ 'set.briefing.dailyTime' | t }}
+                <input type="time" [(ngModel)]="p.briefingTime" [disabled]="!p.briefingEnabled" />
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" [(ngModel)]="p.weeklyEnabled" />
+                <span>{{ 'set.briefing.weekly' | t }}</span>
+              </label>
+              <label>
+                {{ 'set.briefing.weeklyTime' | t }}
+                <input type="time" [(ngModel)]="p.weeklyTime" [disabled]="!p.weeklyEnabled" />
+              </label>
+            </div>
+            <div class="actions">
+              <button type="button" (click)="savePreferences()">{{ 'set.briefing.save' | t }}</button>
+            </div>
+            @if (preferences.message(); as m) {
+              <p class="muted">{{ m }}</p>
+            }
+          }
+        </details>
+
+        @if (auth.isAdmin) {
+          <details class="card editor">
+            <summary>{{ 'set.calSchool.h' | t }}</summary>
+            <p class="muted">{{ 'set.calSchool.intro' | t }}</p>
+            <div class="actions">
+              <button type="button" class="ghost" (click)="importCalendar(currentYear())">
+                {{ 'set.calSchool.import' | t: { year: currentYear() } }}
+              </button>
+              <button type="button" class="ghost" (click)="importCalendar(currentYear() + 1)">
+                {{ 'set.calSchool.import' | t: { year: currentYear() + 1 } }}
+              </button>
+            </div>
+            @if (schoolCalendar.entries().length > 0) {
+              <table class="users">
+                <thead><tr><th>{{ 'set.calSchool.name' | t }}</th><th>{{ 'set.calSchool.dates' | t }}</th><th>{{ 'set.calSchool.type' | t }}</th><th></th></tr></thead>
+                <tbody>
+                  @for (e of schoolCalendar.entries(); track e.id) {
+                    <tr>
+                      <td>{{ e.name }}</td>
+                      <td>{{ e.startDate | ldate: 'd MMM' }} – {{ e.endDate | ldate: 'd MMM y' }}</td>
+                      <td><span class="badge cat">{{ e.entryType }}</span></td>
+                      <td><button type="button" class="ghost" (click)="schoolCalendar.deleteEntry(e.id)">×</button></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            } @else {
+              <p class="muted">{{ 'set.calSchool.empty' | t }}</p>
+            }
+          </details>
+        }
+      }
+    }
+  </div>
+</div>

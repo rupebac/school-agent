@@ -1,0 +1,41 @@
+<header class="page-head">
+  <h1>{{ 'audit.title' | t }}</h1>
+  <p>{{ 'audit.intro' | t }}</p>
+</header>
+
+@if (store.entries().length === 0) {
+  <div class="card empty-hero">
+    <h2>{{ 'audit.empty' | t }}</h2>
+  </div>
+} @else {
+  <div class="card table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>{{ 'audit.when' | t }}</th>
+          <th>{{ 'audit.actor' | t }}</th>
+          <th>{{ 'audit.action' | t }}</th>
+          <th>{{ 'audit.case' | t }}</th>
+          <th>{{ 'audit.detail' | t }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (e of store.entries(); track e.id) {
+          <tr>
+            <td class="nowrap">{{ e.createdAt | ldate: 'd MMM y HH:mm' }}</td>
+            <td>{{ e.actor | label }}</td>
+            <td>{{ e.action | label }}</td>
+            <td>
+              @if (e.caseId) {
+                <a [routerLink]="['/cases', e.caseId]">{{ e.caseId.slice(0, 8) }}…</a>
+              } @else {
+                <span class="muted">{{ 'common.dash' | t }}</span>
+              }
+            </td>
+            <td class="detail">{{ e.detail ?? '' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}

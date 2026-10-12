@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+python3 scripts/check-public-content.py --staged
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo 'Install Gitleaks before committing; required secret scan is unavailable.' >&2
+  exit 1
+fi
+gitleaks git --pre-commit --staged --redact --no-banner --ignore-gitleaks-allow

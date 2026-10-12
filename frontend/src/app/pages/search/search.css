@@ -1,0 +1,33 @@
+.snippet { margin: 8px 0 0; color: var(--text); line-height: 1.5; overflow-wrap: anywhere; }
+.m-search-box {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 400;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    border: 0;
+    outline: 0;
+    padding: 0;
+    background: none;
+    color: var(--text);
+  }
+
+  &:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+@media (max-width: 760px) {
+  .m-search-box { display: flex; }
+}

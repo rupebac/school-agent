@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: school-agent
+  datasource:
+    url: jdbc:postgresql://${SCHOOLAGENT_DB_HOST:localhost}:${SCHOOLAGENT_DB_PORT:15432}/${SCHOOLAGENT_DB_NAME:schoolagent}
+    username: ${SCHOOLAGENT_DB_USER:schoolagent}
+    password: ${SCHOOLAGENT_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 8MB
+
+server:
+  port: 8080
+  # nginx/cloudflared set X-Forwarded-Proto=https; without this, session
+  # cookies look like HTTP and browsers drop them after a hop.
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: lax
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+schoolagent:
+  timezone: Europe/Berlin
+  initial-username: ${SCHOOLAGENT_INITIAL_USERNAME:}
+  initial-password: ${SCHOOLAGENT_INITIAL_PASSWORD:}
+  # openssl rand -base64 32 — required before connecting Google (secrets at rest)
+  master-key: ${SCHOOLAGENT_MASTER_KEY:}
+  # Public SPA origin (WhatsApp deep links + webhook URL shown in Settings)
+  public-url: ${SCHOOLAGENT_PUBLIC_URL:http://127.0.0.1:4200}
+  documents:
+    dir: ${SCHOOLAGENT_DOCUMENTS_DIR:./data/documents}
+  calendar:
+    auto-import: ${SCHOOLAGENT_CALENDAR_AUTO_IMPORT:true}
+  google:
+    client-id: ${SCHOOLAGENT_GOOGLE_CLIENT_ID:}
+    client-secret: ${SCHOOLAGENT_GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${SCHOOLAGENT_GOOGLE_REDIRECT_URI:http://localhost:8080/api/google/callback}
+    success-redirect-uri: ${SCHOOLAGENT_GOOGLE_SUCCESS_REDIRECT:http://127.0.0.1:4200/settings}
+    # calendar id of "Jamie – Schule" once created (default: primary until then)
+    calendar-id: ${SCHOOLAGENT_GOOGLE_CALENDAR_ID:primary}
+    polling-enabled: ${SCHOOLAGENT_GMAIL_POLLING:false}
+    gmail-query: "${SCHOOLAGENT_GMAIL_QUERY:in:inbox}"
+    polling-cron: "0 */10 * * * *"
+  ai:
+    # Z.ai GLM via the coding-plan subscription: the anthropic-compatible
+    # endpoint serves plan quota; /api/paas/v4 is pay-as-you-go only.
+    protocol: ${SCHOOLAGENT_AI_PROTOCOL:anthropic}
+    base-url: ${SCHOOLAGENT_AI_BASE_URL:https://api.z.ai/api/anthropic}
+    api-key: ${SCHOOLAGENT_AI_API_KEY:}

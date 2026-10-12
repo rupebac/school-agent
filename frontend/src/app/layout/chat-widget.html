@@ -1,0 +1,72 @@
+@if (open()) {
+  <div class="chat-scrim" (click)="toggle()"></div>
+  <section
+    class="chat-panel"
+    [class.expanded]="expanded()"
+    role="dialog"
+    [attr.aria-label]="'chat.title' | t"
+    [style.width]="expanded() ? null : width() + 'px'"
+    [style.height]="expanded() ? null : height() + 'px'"
+  >
+    <button
+      type="button"
+      class="chat-resize"
+      [attr.aria-label]="'chat.resize' | t"
+      (pointerdown)="startResize($event)"
+      (pointermove)="onResize($event)"
+      (pointerup)="endResize()"
+      (pointercancel)="endResize()"
+    ></button>
+    <header class="chat-head">
+      <span class="chat-logo"><app-icon name="sparkle" [size]="16" /></span>
+      <span class="chat-titles"><strong>{{ 'chat.title' | t }}</strong><small>{{ 'chat.subtitle' | t }}</small></span>
+      <span class="chat-head-actions">
+        <button
+          type="button"
+          class="ghost chat-x"
+          (click)="toggleSize()"
+          [attr.aria-label]="(expanded() ? 'chat.shrink' : 'chat.expand') | t"
+        >
+          {{ expanded() ? '↙' : '↗' }}
+        </button>
+        <button type="button" class="ghost chat-x" (click)="toggle()" [attr.aria-label]="'chat.close' | t">
+          ×
+        </button>
+      </span>
+    </header>
+    <div class="chat-thread" #thread>
+      @if (messages().length === 0 && !busy()) {
+        <p class="chat-empty">{{ 'chat.empty' | t }}</p>
+      }
+      @for (m of messages(); track $index) {
+        <div class="bubble-wrap" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
+          <p class="bubble" [class.user]="m.role === 'user'" [class.assistant]="m.role === 'assistant'">
+            {{ m.content }}
+          </p>
+          @if (m.role === 'assistant' && m.refs?.length) {
+            <div class="chat-refs">
+              @for (ref of m.refs; track ref.id) {
+                <a class="chat-ref" [href]="'/cases/' + ref.id" (click)="openCase(ref.id, $event)">{{ ref.title }}</a>
+              }
+            </div>
+          }
+        </div>
+      }
+      @if (busy()) {
+        <p class="bubble assistant busy">{{ 'chat.busy' | t }}</p>
+      }
+    </div>
+    <form class="chat-compose" (submit)="$event.preventDefault(); send()">
+      <input
+        type="text"
+        [value]="draft()"
+        (input)="onInput($event)"
+        [placeholder]="'chat.placeholder' | t"
+        [attr.aria-label]="'chat.placeholder' | t"
+        [disabled]="busy()"
+        autocomplete="off"
+      />
+      <button type="submit" [disabled]="busy() || !draft().trim()">{{ 'chat.send' | t }}</button>
+    </form>
+  </section>
+}

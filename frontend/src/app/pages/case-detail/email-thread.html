@@ -1,0 +1,48 @@
+<section class="thread" aria-label="Email conversation">
+  <h2>Email conversation</h2>
+  @if (busy()) { <p role="status">Loading messages…</p> }
+  @if (error(); as message) { <p class="error" role="alert">{{ message }}</p> }
+  @for (message of messages(); track message.id) {
+    <article class="card mail">
+      <header>
+        <strong>{{ message.sender || 'Unknown sender' }}</strong>
+        <time>{{ (message.sentAt || message.receivedAt) | ldate: 'd MMM y HH:mm' }}</time>
+      </header>
+      <h3>{{ message.subject || 'No subject' }}</h3>
+      @if (message.recipients) { <p class="muted">To: {{ message.recipients }}</p> }
+      @if (message.forwardedBy.length) { <p class="muted">Forwarded by {{ message.forwardedBy.join(' · ') }}</p> }
+      @if (message.notice) { <p class="warn">{{ message.notice }}</p> }
+      @if (summaries()[message.id]; as summary) {
+        <div class="message-summary"><small>AI message summary</small><app-document-text [text]="summary.text" /></div>
+        @if (summary.partial) { <p class="warn">Summary covers only part of this long message.</p> }
+      }
+      <div class="mail-actions">
+        <button type="button" class="ghost" (click)="summarize(message.id)" [disabled]="!!summaries()[message.id] || working()[message.id]">{{ working()[message.id] ? 'Summarizing…' : 'Summarize message' }}</button>
+        <button type="button" class="ghost" (click)="translate(message.id)" [disabled]="!!translations()[message.id] || working()['translate:' + message.id]">{{ working()['translate:' + message.id] ? 'Translating…' : 'Translate message' }}</button>
+      </div>
+      @if (translations()[message.id]; as translated) {
+        @if (translated.notice) { <p class="warn">{{ translated.notice }}</p> }
+        <app-document-text [text]="translated.translatedText || ''" />
+      }
+      <details [open]="messages().length === 1 && !translations()[message.id]">
+        <summary>Original message</summary>
+        <app-document-text [text]="message.body || 'Message text unavailable.'" />
+      </details>
+    </article>
+  }
+  @if (messages().length) {
+    <section class="card reply">
+      <label class="reply-toggle"><input type="checkbox" [(ngModel)]="replyEnabled" /> Prepare a reply</label>
+      @if (replyEnabled) {
+        <p class="muted">Drafted in the email’s original language. Review, copy and send from your email app.</p>
+        <label>What would you like to say?<textarea rows="3" maxlength="3000" [(ngModel)]="instructions" placeholder="For example: Ask whether we can meet on Tuesday afternoon."></textarea></label>
+        <button type="button" (click)="prepareDraft()" [disabled]="draftBusy() || !instructions.trim()">{{ draftBusy() ? 'Preparing draft…' : 'Prepare draft' }}</button>
+        @if (draft(); as result) {
+          @if (result.partial) { <p class="warn">This draft uses the most recent messages. Some older or long content was omitted.</p> }
+          <label>Reply draft<textarea rows="10" [(ngModel)]="draftText" (ngModelChange)="copied.set(false)"></textarea></label>
+          <button type="button" class="ghost" (click)="copy()">{{ copied() ? 'Copied' : 'Copy reply' }}</button>
+        }
+      }
+    </section>
+  }
+</section>

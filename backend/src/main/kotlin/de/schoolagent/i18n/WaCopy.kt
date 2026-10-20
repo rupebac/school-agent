@@ -2,9 +2,29 @@ package de.schoolagent.i18n
 
 /**
  * WhatsApp copy in the recipient's language. Inbound chat is the same
- * read-only agent as the website — no command grammar.
+ * read-only agent as the website. Explicit buttons use separate, authorized actions.
  */
 object WaCopy {
+
+    fun markedDone(lang: UserLanguage, title: String): String = when (lang) {
+        UserLanguage.EN -> "Marked as done for the family: $title. You can undo this in the app."
+        UserLanguage.ES -> "Marcado como hecho para la familia: $title. Puedes deshacerlo en la app."
+    }
+
+    fun alreadyDone(lang: UserLanguage, title: String): String = when (lang) {
+        UserLanguage.EN -> "Already marked as done for the family: $title."
+        UserLanguage.ES -> "Ya está marcado como hecho para la familia: $title."
+    }
+
+    fun doneChanged(lang: UserLanguage): String = when (lang) {
+        UserLanguage.EN -> "This school matter has changed. Open the letter to review its current details before marking it done."
+        UserLanguage.ES -> "Este asunto del colegio ha cambiado. Abre la carta para revisar los detalles actuales antes de marcarlo como hecho."
+    }
+
+    fun doneUnavailable(lang: UserLanguage): String = when (lang) {
+        UserLanguage.EN -> "This button is unavailable for your account. Open the letter in the app."
+        UserLanguage.ES -> "Este botón no está disponible para tu cuenta. Abre la carta en la app."
+    }
 
     fun unknownSender(lang: UserLanguage): String = when (lang) {
         UserLanguage.EN -> "This number is not registered with the School Agent."

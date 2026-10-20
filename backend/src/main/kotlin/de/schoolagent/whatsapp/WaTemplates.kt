@@ -9,7 +9,8 @@ object WaTemplates {
     fun language(lang: UserLanguage) = if (lang == UserLanguage.ES) "es" else "en_US"
     enum class Kind { ACTION, INFO, PLAN }
     data class Spec(val name: String, val language: String, val header: String, val body: String,
-                    val examples: List<String>, val button: String? = null, val url: String? = null, val headerExample: String? = null)
+                    val examples: List<String>, val button: String? = null, val url: String? = null, val headerExample: String? = null,
+                    val doneButton: String? = null)
     data class Message(val name: String, val language: String, val params: List<String>, val suffix: String? = null,
                        val localized: Boolean = false, val childId: String? = null, val header: String? = null)
 
@@ -45,7 +46,8 @@ object WaTemplates {
                     }),
                 (if (plan) listOf(if (es) "5–11 de octubre" else "5–11 October") else listOf(if (es) "Libro de lectura de la clase" else "Class reading book")) + rows.take(count),
                 if (plan) { if (es) "Abrir plan" else "Open plan" } else { if (es) "Abrir carta" else "Open letter" },
-                home.trimEnd('/') + "/{{1}}", if (plan) { if (es) "La próxima semana para Taylor" else "Next week for Taylor" } else "Taylor")
+                home.trimEnd('/') + "/{{1}}", if (plan) { if (es) "La próxima semana para Taylor" else "Next week for Taylor" } else "Taylor",
+                if (kind == Kind.ACTION) { if (es) "Marcar como hecho" else "Mark as done" } else null)
         } } + Spec(testName(lang), language(lang), "School Agent",
             if (es) "La prueba de conexión de WhatsApp para {{1}} ha funcionado. Tus preferencias de notificaciones de School Agent están activas."
             else "Your WhatsApp connection test for {{1}} succeeded. Your selected School Agent notification preferences are active.",

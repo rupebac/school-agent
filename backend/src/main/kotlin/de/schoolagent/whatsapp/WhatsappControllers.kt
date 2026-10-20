@@ -149,7 +149,7 @@ class WhatsappAdminController(
         }
     }
 
-    /** Create any missing School Agent utility templates on the WABA. */
+    /** Create missing templates and submit changed utility layouts for review in place. */
     @PostMapping("/templates/sync")
     fun syncTemplates(@RequestParam(required = false) kid: java.util.UUID?): ResponseEntity<Map<String, Any>> {
         if (!config.isConfigured(kid)) {

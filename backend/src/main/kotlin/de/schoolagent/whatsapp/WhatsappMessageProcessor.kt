@@ -8,6 +8,7 @@ class WhatsappMessageProcessor(
     private val qa: QuestionAnsweringService,
     private val graph: GraphWhatsappClient,
     private val photos: de.schoolagent.ingestion.PhotoIngestionService,
+    private val done: WhatsappDoneService,
 ) {
     companion object {
         fun accessStamp(user: de.schoolagent.domain.model.AppUser): String = user.role + ":" + user.kids.map { it.id.toString() }.sorted().joinToString(",")
@@ -32,6 +33,7 @@ class WhatsappMessageProcessor(
                 }
                 val lang = de.schoolagent.i18n.UserLanguage.of(user.language)
                 val reply = when {
+                    type == "button" || type == "interactive" -> done.handle(message, user)
                     type == "image" || type == "document" -> ingestMedia(message, type, user, lang)
                     !text.isNullOrBlank() ->
                         qa.answerAndRemember(text, user).forWhatsApp(config.config().frontendUrl)

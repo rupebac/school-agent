@@ -19,6 +19,7 @@ interface WhatsappClient {
         bodyParams: List<String> = emptyList(),
         urlSuffix: String? = null,
         headerText: String? = null,
+        quickReplyPayload: String? = null,
     ): String
 }
 
@@ -47,7 +48,7 @@ class GraphWhatsappClient(
         }
     }
 
-    override fun sendTemplate(toNumber: String, name: String, language: String, bodyParams: List<String>, urlSuffix: String?, headerText: String?): String {
+    override fun sendTemplate(toNumber: String, name: String, language: String, bodyParams: List<String>, urlSuffix: String?, headerText: String?, quickReplyPayload: String?): String {
         val body = factory.objectNode().apply {
             put("messaging_product", "whatsapp")
             put("to", waId(toNumber))
@@ -78,6 +79,12 @@ class GraphWhatsappClient(
                         putArray("parameters").addObject().put("type", "text").put("text", suffix)
                     }
                 }
+                quickReplyPayload?.let { payload ->
+                    components.addObject().apply {
+                        put("type", "button"); put("sub_type", "quick_reply"); put("index", "1")
+                        putArray("parameters").addObject().put("type", "payload").put("payload", payload)
+                    }
+                }
             }
         }
         return postMessage(body).path("messages").path(0).path("id").asText(null)
@@ -85,13 +92,14 @@ class GraphWhatsappClient(
     }
 
     data class RemoteTemplate(val name: String, val language: String, val status: String,
-                              val components: com.fasterxml.jackson.databind.JsonNode? = null, val category: String = "UTILITY")
+                              val components: com.fasterxml.jackson.databind.JsonNode? = null, val category: String = "UTILITY",
+                              val id: String? = null)
 
     fun listMessageTemplates(): List<RemoteTemplate> {
         val cfg = config.config()
         val wabaId = cfg.wabaId?.trim()?.takeIf { it.isNotBlank() }
             ?: throw WhatsappSendException("WhatsApp Business Account ID (WABA) is missing")
-        var url: String? = "${cfg.apiUrl}/$wabaId/message_templates?limit=100&fields=name,language,status,components,category"
+        var url: String? = "${cfg.apiUrl}/$wabaId/message_templates?limit=100&fields=id,name,language,status,components,category"
         val result = mutableListOf<RemoteTemplate>()
         val seen = mutableSetOf<String>()
         while (url != null) {
@@ -101,7 +109,7 @@ class GraphWhatsappClient(
             val node = graphJson("GET", url)
             result += node.path("data").map {
                 RemoteTemplate(it.path("name").asText(), it.path("language").asText(), it.path("status").asText("UNKNOWN"),
-                    it.path("components"), it.path("category").asText())
+                    it.path("components"), it.path("category").asText(), it.path("id").asText(null))
             }.filter { it.name.isNotBlank() }
             url = node.path("paging").path("next").asText(null)?.takeIf { it.isNotBlank() }
         }
@@ -123,10 +131,12 @@ class GraphWhatsappClient(
         components.addObject().put("type", "FOOTER").put("text", "School Agent")
         if (spec.button != null) components.addObject().apply {
             put("type", "BUTTONS")
-            putArray("buttons").addObject().apply {
+            val buttons = putArray("buttons")
+            buttons.addObject().apply {
                 put("type", "URL"); put("text", spec.button); put("url", spec.url)
                 putArray("example").add(spec.url!!.replace("{{1}}", "cases/6d6970fa-a143-437a-a97f-843f1f5e17ed"))
             }
+            spec.doneButton?.let { buttons.addObject().put("type", "QUICK_REPLY").put("text", it) }
         }
     }.toString()
 
@@ -134,6 +144,14 @@ class GraphWhatsappClient(
         val cfg = config.config()
         val wabaId = cfg.wabaId?.takeIf { it.isNotBlank() } ?: throw WhatsappSendException("WABA ID is missing")
         graphJson("POST", "${cfg.apiUrl}/$wabaId/message_templates", templatePayload(spec))
+    }
+
+    /** Edit the existing language variant in place; Meta reviews the changed components again. */
+    fun editMessageTemplate(id: String, spec: WaTemplates.Spec) {
+        require(id.matches(Regex("[0-9]+"))) { "Invalid Meta template identity" }
+        val body = factory.objectNode().set<com.fasterxml.jackson.databind.JsonNode>("components",
+            mapper.readTree(templatePayload(spec)).path("components"))
+        graphJson("POST", "${config.config().apiUrl}/$id", body.toString())
     }
 
     /**

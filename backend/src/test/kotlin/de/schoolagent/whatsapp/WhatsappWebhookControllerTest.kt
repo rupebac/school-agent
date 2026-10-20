@@ -20,6 +20,7 @@ class WhatsappWebhookControllerTest {
     private val client = mockk<WhatsappClient>(relaxed = true)
     private val graph = mockk<GraphWhatsappClient>()
     private val photos = mockk<PhotoIngestionService>()
+    private val done = mockk<WhatsappDoneService>()
     private val outbox = mockk<WhatsappOutbox>(relaxed = true)
     private val health = mockk<HealthTracker>(relaxed = true)
     private val morgan = AppUser(name = "morgan", displayName = "Morgan", passwordHash = "x", whatsappNumber = "+12025550111")
@@ -42,7 +43,7 @@ class WhatsappWebhookControllerTest {
             secondArg<() -> Unit>().invoke()
         }
         val inbox = mockk<WhatsappInbox>()
-        val processor = WhatsappMessageProcessor(config, qa, graph, photos)
+        val processor = WhatsappMessageProcessor(config, qa, graph, photos, done)
         every { inbox.enqueue(any(), any()) } answers {
             processor.prepare(firstArg(), secondArg())?.let { client.sendText(it.recipient, it.text) }
             Unit
@@ -61,6 +62,23 @@ class WhatsappWebhookControllerTest {
         assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
         verify { config.withChild(childId, any()) }
         verify { client.sendText("12025550111", "hello from school") }
+    }
+
+    @Test
+    fun `signed button callbacks route to the explicit action without asking the chat AI`() {
+        every { config.childIdForPhoneNumberId("111") } returns childId
+        every { config.userForNumber("12025550111") } returns morgan
+        every { done.handle(any(), morgan) } returns "Marked as done for the family."
+        val root = com.fasterxml.jackson.databind.ObjectMapper().readTree(TEXT_PAYLOAD)
+        val message = root.path("entry")[0].path("changes")[0].path("value").path("messages")[0] as com.fasterxml.jackson.databind.node.ObjectNode
+        message.put("type", "button")
+        message.remove("text")
+        message.putObject("button").put("text", "Mark as done").put("payload", "synthetic")
+        val payload = root.toString()
+        controller.inbound(payload, sign(payload))
+        verify { done.handle(any(), morgan) }
+        verify(exactly = 0) { qa.answerAndRemember(any(), any()) }
+        verify { client.sendText("12025550111", "Marked as done for the family.") }
     }
 
     @Test

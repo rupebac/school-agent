@@ -12,6 +12,7 @@ class WhatsAppTemplateSync(private val client: GraphWhatsappClient, private val 
     private var cached: List<TemplateStatusDto> = emptyList()
     private var checkedAt = java.time.Instant.EPOCH
     private var fingerprint = ""
+    private var remoteTemplates: List<GraphWhatsappClient.RemoteTemplate> = emptyList()
     @Synchronized
     fun list(force: Boolean = false): List<TemplateStatusDto> {
         val cfg = config.config()
@@ -23,6 +24,7 @@ class WhatsAppTemplateSync(private val client: GraphWhatsappClient, private val 
             catalog.map { TemplateStatusDto(it.name, it.language, "MISSING", "WhatsApp token, phone or WABA ID is missing") }
         } else try {
             val remote = client.listMessageTemplates()
+            remoteTemplates = remote
             catalog.map { spec ->
                 val found = remote.find { it.name == spec.name && it.language == spec.language }
                 when {
@@ -44,20 +46,28 @@ class WhatsAppTemplateSync(private val client: GraphWhatsappClient, private val 
     fun ensure(): List<TemplateStatusDto> {
         val before = list(force = true)
         // No creates if the authoritative read failed.
-        if (before.any { it.status == "ERROR" || it.error != null }) return before
+        if (before.any { it.status == "ERROR" || it.status == "MISSING" && it.error != null }) return before
         val errors = mutableMapOf<Pair<String, String>, String>()
         val submitted = mutableSetOf<Pair<String, String>>()
         WaTemplates.catalog(config.config().frontendUrl).forEach { spec ->
-            if (before.any { it.name == spec.name && it.language == spec.language && it.status == "MISSING" }) {
-                try { client.createMessageTemplate(spec); submitted += spec.name to spec.language }
-                catch (e: Exception) { errors[spec.name to spec.language] = e.message?.take(250) ?: "Registration failed" }
+            val row = before.find { it.name == spec.name && it.language == spec.language } ?: return@forEach
+            val remote = remoteTemplates.find { it.name == spec.name && it.language == spec.language }
+            // An in-review edit must finish before another edit is submitted. Never change categories.
+            val editable = row.status == "MISMATCH" && remote?.category == "UTILITY" &&
+                remote.status in setOf("APPROVED", "REJECTED", "PAUSED") && remote.id != null
+            if (row.status == "MISSING" || editable) {
+                try {
+                    if (editable) client.editMessageTemplate(remote!!.id!!, spec) else client.createMessageTemplate(spec)
+                    submitted += spec.name to spec.language
+                }
+                catch (_: Exception) { errors[spec.name to spec.language] = "Template submission failed; check Meta and retry" }
             }
         }
         cached = list(force = true).map { row ->
             val key = row.name to row.language
             when {
                 errors.containsKey(key) -> row.copy(status = "ERROR", error = errors[key])
-                row.status == "MISSING" && key in submitted -> row.copy(status = "SUBMITTED")
+                row.status in setOf("MISSING", "MISMATCH") && key in submitted -> row.copy(status = "SUBMITTED", error = null)
                 else -> row
             }
         }
@@ -70,7 +80,8 @@ class WhatsAppTemplateSync(private val client: GraphWhatsappClient, private val 
         val button = buttons?.firstOrNull()
         return components.size() == (if (spec.button == null) 3 else 4) && found.category == "UTILITY" && component("HEADER")?.path("text")?.asText() == spec.header &&
             component("BODY")?.path("text")?.asText() == spec.body && component("FOOTER")?.path("text")?.asText() == "School Agent" &&
-            if (spec.button == null) button == null else buttons?.size() == 1 && button?.path("type")?.asText() == "URL" &&
-                button.path("text").asText() == spec.button && button.path("url").asText() == spec.url
+            if (spec.button == null) button == null else buttons?.size() == (if (spec.doneButton == null) 1 else 2) && button?.path("type")?.asText() == "URL" &&
+                button.path("text").asText() == spec.button && button.path("url").asText() == spec.url &&
+                (spec.doneButton == null || buttons[1].path("type").asText() == "QUICK_REPLY" && buttons[1].path("text").asText() == spec.doneButton)
     }
 }

@@ -123,7 +123,10 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
         row.attemptCount++; rows.saveAndFlush(row)
         trace(row, DiagnosticOutcome.SENDING)
         try {
-            row.messageId = client.sendTemplate(users.findById(user!!.id).orElseThrow().whatsappNumber!!, message.name, message.language, message.params, message.suffix, message.header)
+            val donePayload = if (WaTemplates.catalog(config.config().frontendUrl).any {
+                    it.name == message.name && it.language == message.language && it.doneButton != null
+                }) WhatsappDoneService.payload(row.id) else null
+            row.messageId = client.sendTemplate(users.findById(user!!.id).orElseThrow().whatsappNumber!!, message.name, message.language, message.params, message.suffix, message.header, donePayload)
             row.status = NotificationStatus.ACCEPTED; row.sentAt = clock.instant(); row.lastError = null
             trace(row, DiagnosticOutcome.ACCEPTED)
             synchronized(this) {

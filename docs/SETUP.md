@@ -279,3 +279,18 @@ operator review; automatically repeating it could send the same reply twice.
 Administrators can inspect queue counts at `/api/whatsapp/inbound-status`.
 Completed message content is cleared; other queued content expires after seven days
 and deduplication records after 60 days.
+
+Individual actionable-letter notifications include **Open letter** and **Mark as
+done**. Done uses the same shared family completion as the website, including open
+parent tasks, child requirements, history, audit and Undo support. The button is
+accepted only from the original registered recipient, for the original message,
+with current child access and unchanged school facts. Repeated taps report the
+existing completion. Information-only notices and daily/weekly plans have no Done
+button; information uses the website's personal read marks.
+
+**Register notification templates** creates missing templates and edits changed
+utility layouts in place using their existing Meta IDs and names. Changed templates
+need Meta approval again; affected notifications wait in the existing queue while
+their normal expiry remains in force. Use this operation explicitly after updating
+the app. A read-only status refresh never edits templates or submits another edit
+while an earlier change is in review.

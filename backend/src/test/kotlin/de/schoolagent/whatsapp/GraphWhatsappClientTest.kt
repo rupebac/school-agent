@@ -101,6 +101,36 @@ class GraphWhatsappClientTest {
         assertThat(mapper.readTree(client.templatePayload(spec)).path("components")[0].path("example").path("header_text")[0].asText()).isEqualTo("Next week for Taylor")
     }
 
+    @Test fun `Done is a quick reply after Open letter with an opaque notification payload`() {
+        every { config.config() } returns WhatsAppConfigService.Config("https://graph.facebook.com/v25.0", "111", "222", "test-token", null, null, "https://school.example.org")
+        val entity = slot<HttpEntity<*>>()
+        every { rest.exchange(any<String>(), eq(HttpMethod.POST), capture(entity), eq(String::class.java)) } returns
+            ResponseEntity.ok("""{"messages":[{"id":"synthetic-message"}]}""")
+        val client = GraphWhatsappClient(config, rest)
+        val payload = WhatsappDoneService.payload(java.util.UUID.randomUUID())
+        client.sendTemplate("+12025550111", WaTemplates.name(WaTemplates.Kind.ACTION, 1), "en_US",
+            listOf("Reading book", "Bring the book"), "cases/synthetic", "Synthetic Child", payload)
+        val buttons = mapper.readTree(entity.captured.body as String).path("template").path("components").filter { it.path("type").asText() == "button" }
+        assertThat(buttons.map { it.path("sub_type").asText() }).containsExactly("url", "quick_reply")
+        assertThat(buttons[1].path("index").asText()).isEqualTo("1")
+        assertThat(buttons[1].path("parameters")[0].path("type").asText()).isEqualTo("payload")
+        assertThat(buttons[1].path("parameters")[0].path("payload").asText()).isEqualTo(payload)
+        val spec = WaTemplates.catalog("https://school.example.org").first()
+        val layout = mapper.readTree(client.templatePayload(spec)).path("components").last().path("buttons")
+        assertThat(layout.map { it.path("type").asText() }).containsExactly("URL", "QUICK_REPLY")
+        assertThat(layout[1].path("text").asText()).isEqualTo("Mark as done")
+    }
+
+    @Test fun `editing uses the existing template ID and only sends editable components`() {
+        every { config.config() } returns WhatsAppConfigService.Config("https://graph.facebook.com/v25.0", "111", "222", "test-token", null, null, "https://school.example.org")
+        val entity = slot<HttpEntity<*>>()
+        every { rest.exchange(eq("https://graph.facebook.com/v25.0/123"), eq(HttpMethod.POST), capture(entity), eq(String::class.java)) } returns ResponseEntity.ok("""{"success":true}""")
+        GraphWhatsappClient(config, rest).editMessageTemplate("123", WaTemplates.catalog("https://school.example.org").first())
+        val body = mapper.readTree(entity.captured.body as String)
+        assertThat(body.fieldNames().asSequence().toList()).containsExactly("components")
+        assertThat(body.path("components").last().path("buttons")).hasSize(2)
+    }
+
     @Test fun `listing follows all Graph pages and preserves component schemas`() {
         every { config.config() } returns WhatsAppConfigService.Config("https://graph.facebook.com/v25.0", "phone", "waba", "t", null, null, "https://school.example.org")
         every { rest.exchange(any<String>(), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(String::class.java)) } answers {

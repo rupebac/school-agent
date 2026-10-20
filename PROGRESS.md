@@ -5,6 +5,17 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+WhatsApp Done buttons implemented on 2026-10-20: existing individual action-letter
+templates gain a localized quick reply alongside Open letter, without new template
+names. Buttons bind to the original recipient and message, recheck access and the
+school revision, and reuse shared family completion with history and audit. Duplicate
+taps are idempotent; changed matters require review. Information notices and plans
+keep their existing controls. Template sync can edit mismatched utility layouts in
+place and waits for matching Meta approval. Validation: 446 backend and 87 frontend
+tests, plus production frontend build, pass. Backend/frontend deployed on 2026-10-20;
+public health and frontend fingerprint verified. Existing action templates were
+updated in place and submitted for Meta approval; affected sends wait for approval.
+
 Local review and follow-up on 2026-10-20: [source and regression audit](docs/REVIEW-2026-10-20.md)
 records the initial fixes and corrections for all nine follow-up findings: connector
 network restrictions, Calendar target reconciliation/stable IDs, durable inbound

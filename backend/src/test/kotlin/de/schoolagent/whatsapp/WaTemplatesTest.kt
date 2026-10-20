@@ -6,6 +6,14 @@ import org.junit.jupiter.api.Test
 
 class WaTemplatesTest {
     private val home = "https://school.example.org"
+    @Test fun `only individual action letters gain a localized Done button with existing template names`() {
+        val catalog = WaTemplates.catalog(home)
+        val actionable = catalog.filter { it.doneButton != null }
+        assertThat(actionable).hasSize(10)
+        assertThat(actionable.map { it.name }).allMatch { it.startsWith("school_agent_action_v5_") }
+        assertThat(actionable.map { it.doneButton }.toSet()).containsExactlyInAnyOrder("Mark as done", "Marcar como hecho")
+        assertThat(catalog.filter { !it.name.contains("_action_") }).allMatch { it.doneButton == null }
+    }
     @Test fun `layouts use native buttons with separate action and information headings in both languages`() {
         val catalog = WaTemplates.catalog(home)
         assertThat(catalog.map { it.language }.toSet()).containsExactlyInAnyOrder("en_US", "es")

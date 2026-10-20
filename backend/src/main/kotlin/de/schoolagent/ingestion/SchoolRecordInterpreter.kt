@@ -16,7 +16,8 @@ class SchoolRecordInterpreter(private val model: ModelRouter) {
     fun interpret(record: SchoolRecord): Copy {
         val wording = wordingSource(record)
         val input = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(mapOf("kind" to record.kind,
-            "title" to wording.title, "sourceText" to wording.text, "reportedDate" to record.date?.toString(), "paymentDeadline" to record.dueDate?.toString()))
+            "title" to wording.title, "sourceText" to wording.text, "reportedDate" to record.date?.toString(),
+            "paymentDeadline" to record.dueDate?.toString(), "payment" to record.payment))
         return try {
             val answer = model.completeValidated(ModelRole.TEXT, PROMPT, input, "school-record") { parse(record, it) }
             parse(record, answer)
@@ -77,7 +78,12 @@ class SchoolRecordInterpreter(private val model: ModelRouter) {
             An EXAM is a scheduled assessment, not an invitation to register. Do not invent study tasks or exam contents.
             FORGOTTEN_HOMEWORK and FORGOTTEN_MATERIAL are reports of something already forgotten on the reported date,
             not future bring-item appointments. State exactly what is reported. Do not invent tasks, consequences or deadlines.
-            PAYMENT is an open payment request: action is one short English payment instruction; include the exact amount when supplied.
+            PAYMENT carries school-reported payment status when available. For OUTSTANDING or PARTIAL,
+            action is one short English payment instruction for the remaining balance, never the full amount already partly paid.
+            For SETTLED or CANCELLED, state that the school resolved it and never ask to pay again.
+            For UNKNOWN, ask to check the remaining balance rather than inventing an amount or claiming it is unpaid.
+            HOMEWORK is an assignment, not a report of something forgotten. Its reported date is not its deadline.
+            TIMETABLE_CHANGE is only the reported change; never infer permission to arrive late or leave early.
             dueDate is YYYY-MM-DD only for an explicitly stated payment deadline. dueEvidence must be a verbatim source phrase
             that proves that deadline, including the date. Unknown dates remain null. Never infer a due date from receipt/report dates.
             For all other kinds action, dueDate and dueEvidence must be null. Never create an instruction simply to read information.

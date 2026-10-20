@@ -82,7 +82,7 @@ class SourceReadingService(
             notice = when {
                 original == null -> "Text could not be extracted. Open the original document to check it."
                 original.length > MAX_DOCUMENT_CHARS -> "This document exceeds the translation limit; the original text is shown."
-                source.mimeType?.contains("pdf") == true && needsVision(source) -> "Scanned document: only the first four pages can be read. Check the original for missing pages or text."
+                source.mimeType?.contains("pdf") == true && needsVision(source) -> "Scanned document: only the first three pages can be read. Check the original for missing pages or text."
                 source.mimeType?.startsWith("image/") == true -> "Text was read from an image. Check dates and amounts against the original."
                 translatedPair?.second != true && !alreadyInLanguage(original, language) -> "Translation is unavailable; showing the original text."
                 else -> null
@@ -120,7 +120,7 @@ class SourceReadingService(
     private fun visionText(bytes: ByteArray, pdf: Boolean): String? {
         if (!router.available(ModelRole.VISION)) return null
         val images = try {
-            if (pdf) TextExtractor.renderPdfPages(bytes, maxPages = 4)
+            if (pdf) TextExtractor.renderPdfPages(bytes, maxPages = 3)
             else listOfNotNull(asPng(bytes))
         } catch (e: Exception) {
             log.debug("could not render source for reading: {}", e.javaClass.simpleName)

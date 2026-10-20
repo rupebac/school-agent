@@ -18,7 +18,8 @@ class SchulmanagerRecordsTest {
                 "get-active-modules" -> """[{"name":"exams"}]"""
                 "exams-visible-for-students" -> "true"
                 "get-exams" -> """[{"id":123,"date":"2026-11-20","subject":{"name":"Mathematik"},"type":{"name":"Schulaufgabe"},"startClassHour":{"from":"09:45:00"},"endClassHour":null}]"""
-                else -> error("Unexpected request")
+                "get-homework" -> "[]"
+            else -> error("Unexpected request")
             })
         }
         val feeds = reader.read("76", from, to)
@@ -36,6 +37,7 @@ class SchulmanagerRecordsTest {
             "exams-visible-for-students" -> json.readTree("true")
             "get-exams", "get-entry-statistics" -> null
             "get-current-term" -> json.readTree("""{"id":7}""")
+            "get-homework" -> null
             else -> error("Unexpected request")
         } }
         assertThat(reader.read("76", from, to)).allMatch { it.status == SchoolFeedStatus.UNAVAILABLE && !it.complete }
@@ -46,6 +48,7 @@ class SchulmanagerRecordsTest {
             "get-current-term" -> """{"id":7}"""
             "get-entry-statistics" -> """[{"name":"Hausaufgaben vergessen","entries":[{"id":20,"studentId":76,"date":"2026-10-09","text":"Übungsblatt","taughtLesson":{"subject":{"name":"Mathematik"}}}]},{"name":"Material vergessen","entries":[]}]"""
             "get-unpaid-invoices-for-widget" -> """[{"id":30,"studentId":76,"sum":"17.20","paidSum":"0","createdAt":"2026-10-01","generalInvoice":{"title":"Kopiergeld","dueDate":"2026-10-15"}},{"id":31,"studentId":99,"sum":"100","generalInvoice":{"title":"Sibling invoice"}}]"""
+            "get-homework" -> "[]"
             else -> error("Unexpected request")
         }) }
         val feeds = reader.read("76", from, to)
@@ -60,6 +63,7 @@ class SchulmanagerRecordsTest {
             "get-active-modules" -> """[{"name":"exams"}]"""
             "exams-visible-for-students" -> "true"
             "get-exams" -> """[{"id":123,"studentId":99,"date":"2026-11-20","subject":{"name":"Math"}}]"""
+            "get-homework" -> "[]"
             else -> error("Unexpected request")
         }) }
         val feed = reader.read("76", from, to).single { it.kind == SchoolRecordKind.EXAM }
@@ -68,13 +72,14 @@ class SchulmanagerRecordsTest {
     }
     @Test fun `module discovery failure returns failed sections rather than aborting letter orchestration`() {
         val reader = SchulmanagerRecords { _, _, _ -> throw SchoolConnectionException("unavailable") }
-        assertThat(reader.read("76", from, to)).hasSize(4).allMatch { it.status == SchoolFeedStatus.FAILED && !it.complete }
+        assertThat(reader.read("76", from, to)).hasSize(SchoolRecordKind.entries.size).allMatch { it.status == SchoolFeedStatus.FAILED && !it.complete }
     }
     @Test fun `common missing homework labels work and unfamiliar relevant groups fail visibly`() {
         fun reader(name: String) = SchulmanagerRecords { _, endpoint, _ -> json.readTree(when (endpoint) {
             "get-active-modules" -> """[{"name":"classbook"}]"""
             "get-current-term" -> """{"id":7}"""
             "get-entry-statistics" -> """[{"name":"$name","entries":[{"id":20,"date":"2026-10-09","text":"Worksheet"}]}]"""
+            "get-homework" -> "[]"
             else -> error("Unexpected request")
         }) }
         for (name in listOf("HA vergessen", "Hausaufgaben nicht erledigt")) {

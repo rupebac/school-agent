@@ -38,6 +38,7 @@ data class CaseSummaryDto(
     val read: Boolean = false,
     val revision: String = "",
     val canUndo: Boolean = false,
+    val schoolUpdatePending: Boolean = false,
     val sourceTypes: List<String> = emptyList(),
     val latestChange: String? = null,
     val sourceDate: Instant? = null,
@@ -58,6 +59,8 @@ data class SourceDto(
     val fetchStatus: String,
     val forwardedBy: String? = null,
     val originalSentAt: Instant? = null,
+    val superseded: Boolean = false,
+    val schoolVersion: Int? = null,
 )
 
 data class EvidenceDto(
@@ -182,6 +185,19 @@ data class CaseDetailDto(
     val revision: String = "",
     val canUndo: Boolean = false,
     val relevance: de.schoolagent.inbox.CaseRelevance? = null,
+    val schoolUpdatePending: Boolean = false,
+    val previousSources: List<SourceDto> = emptyList(),
+    val schoolObservations: List<SchoolObservationDto> = emptyList(),
+    val schoolPayments: List<SchoolPaymentDto> = emptyList(),
+)
+
+data class SchoolPaymentDto(val title: String, val status: String, val currency: String,
+    val totalMinor: Long?, val paidMinor: Long?, val observedAt: Instant)
+
+data class SchoolObservationDto(
+    val title: String?, val version: Int, val checkedAt: Instant, val lastSuccessAt: Instant?,
+    val failureCode: String?, val receipt: String, val response: String, val deadline: String?,
+    val deadlineAllDay: Boolean = false,
 )
 
 fun SchoolCase.toSummary(
@@ -209,6 +225,7 @@ fun SchoolCase.toSummary(
     classificationOverridden = infoOverride != null,
     classificationReview = classificationReview,
     canUndo = status == de.schoolagent.domain.enums.CaseStatus.COMPLETED && completionSnapshot != null,
+    schoolUpdatePending = schoolUpdatePending,
 )
 
 fun Source.toDto() = SourceDto(
@@ -223,6 +240,8 @@ fun Source.toDto() = SourceDto(
     fetchStatus = fetchStatus.name,
     forwardedBy = forwardedBy,
     originalSentAt = originalSentAt,
+    superseded = superseded,
+    schoolVersion = schoolVersion,
 )
 
 fun Evidence.toDto() = EvidenceDto(

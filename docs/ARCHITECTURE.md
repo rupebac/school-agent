@@ -70,7 +70,43 @@ the database, so a crash at any point loses nothing.
    re-runs. Projector updates Google Calendar; notifier decides
    IMMEDIATE / DIGEST / SILENT per family policy.
 
-### Native school records
+### Mutable portal notices and school observations
+
+`SchoolNoticeIngestionService` is the shared path for letters, message entries and
+noticeboard posts. Provider adapters only discover scoped items and return documents
+plus typed receipt/response observations. An explicit connection permission allows
+Elternportal PDF retrieval and its automatic receipt side effect. No form answers,
+consent choices, messages or payments are submitted by a connector.
+
+V34 introduces stable `SchoolItem` identities and immutable manifest revisions.
+Raw content and semantic fingerprints are separate: metadata-only PDF regeneration
+retains family read/completion identity; ambiguous changes require review. Existing
+Source IDs are adopted and preserved. Current Source/Evidence queries exclude
+superseded parts; historical sources remain authorized downloads. Crawled sources
+record their root-source provenance so replacing one letter cannot retire independent
+evidence in a merged case.
+
+Complete candidate manifests are downloaded and fingerprinted before a short
+child/case transaction. PostgreSQL session advisory locks serialize provider account
+context across workers; at most two local operations hold a dedicated lock connection.
+Acquisition budgets bound requests, bytes, item counts and each provider session.
+Each notice feed has its own quiet baseline, content-check timestamps and backlog.
+
+`SchoolCorrectionService` reads current originals/OCR and proposes explicit operations
+outside database locks. It checks current fact fingerprints and validates target IDs
+and source quotes under the case lock before applying. Stable action/event IDs retain
+completion and Calendar identity. Failed or ambiguous reviews retain old accepted
+duties with a pending banner and block stale Done actions. Durable notification intent
+and Calendar pending flags survive restarts.
+
+Native homework, payments and timetable changes reuse `SchoolRecordIngestionService`.
+Homework is a child requirement, with only explicitly supplied deadlines. Native
+sources also retain immutable history. Typed payment observations update only their
+linked duty; partial payments preserve local Done, while a higher obligation or a
+payment reversal reopens it. No disappearance from a partial list proves settlement.
+Routine timetable lessons never become Calendar appointments.
+
+### Native record acquisition
 
 `SchoolSession` binds a fresh login to a verified child before reading letters or native
 sections. `SchoolRecordFeed` distinguishes AVAILABLE (including a proven empty list),

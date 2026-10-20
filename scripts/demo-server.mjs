@@ -67,6 +67,13 @@ actions.filter(a => a.caseId === shared.id).forEach(a => { a.status = 'COMPLETED
 const holidays = [{ id: 'demo-holiday', childId: null, name: 'Autumn break', startDate: '2026-10-26', endDate: '2026-10-30', entryType: 'HOLIDAY' }];
 function detail(item) {
   return { ...item, confidence: 0.96, muted: false, investigationNotes: 'Fictional school letter, verified for the local demo.',
+    schoolUpdatePending: item.id === 'demo-contact-details',
+    schoolPayments: item.category === 'PAYMENT' ? [{ title: item.title, status: 'PARTIAL', currency: 'EUR',
+      totalMinor: 1200, paidMinor: 500, observedAt: at(13) }] : [],
+    schoolObservations: item.id === 'demo-field-trip' ? [{ title: item.title, version: 2, receipt: 'ACKNOWLEDGED',
+      response: 'PENDING', deadline: at(15, '00:00'), deadlineAllDay: true, checkedAt: at(13), lastSuccessAt: at(13), failureCode: null }] : [],
+    previousSources: item.id === 'demo-field-trip' ? [{ id: 'demo-prior-source', sourceType: 'PORTAL_LETTER', title: 'Previous museum letter',
+      mimeType: 'application/pdf', superseded: true, schoolVersion: 1, fetchStatus: 'FETCHED' }] : [],
     sources: [{ id: `${item.id}-source`, sourceType: item.sourceTypes[0], externalId: 'demo-letter', title: item.title,
       sender: null, receivedAt: item.sourceDate, originalSentAt: item.sourceDate, canonicalUrl: null, mimeType: 'application/pdf', fetchStatus: 'FETCHED' }],
     actions: actions.filter(a => a.caseId === item.id), requirements: requirements.filter(a => a.caseId === item.id),

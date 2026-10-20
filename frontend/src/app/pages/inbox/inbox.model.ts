@@ -52,6 +52,7 @@ export function writeCollapsedSections(sections: Set<string>): void {
 }
 
 export interface InboxItem {
+  schoolUpdatePending?: boolean;
   archived?: boolean;
   expiresAt?: string | null;
   informationOnly?: boolean;
@@ -126,6 +127,7 @@ export function buildInbox(
     const action = c.informationOnly ? null : pickOpenAction(actionsByCase.get(c.id) ?? []);
     const event = pickComingEvent(eventsByCase.get(c.id) ?? [], now);
     return {
+      schoolUpdatePending: c.schoolUpdatePending,
       archived: c.relevance ? Date.parse(c.relevance.expiresAt) <= now : false,
       expiresAt: c.relevance?.expiresAt,
       informationOnly: c.informationOnly ?? (c.status === 'INFORMATION_ONLY'),

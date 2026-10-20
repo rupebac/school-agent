@@ -138,7 +138,7 @@ class SettingsSecretsApiTest {
     }
 
     @Test
-    fun `elternportal status returns the stored password in plaintext`() {
+    fun `elternportal status preserves the password without exposing it`() {
         val kid = "00000000-0000-0000-0000-000000000003"
         val saved = exchange(
             HttpMethod.PUT,
@@ -146,12 +146,30 @@ class SettingsSecretsApiTest {
             """{"url":"https://school.eltern-portal.org","username":"parent@example.com","password":"portal-secret"}""",
         )
         assertThat(saved.statusCode.value()).isEqualTo(200)
-        assertThat(saved.body).contains("portal-secret", "parent@example.com")
+        assertThat(saved.body).doesNotContain("portal-secret").contains("parent@example.com", "\"hasPassword\":true")
 
         val status = exchange(HttpMethod.GET, "/api/elternportal/status?kid=$kid")
         assertThat(status.statusCode.value()).isEqualTo(200)
-        assertThat(status.body).contains("portal-secret")
+        assertThat(status.body).doesNotContain("portal-secret").contains("\"hasPassword\":true")
     }
+    @Test
+    fun `receipt and family sharing permissions belong to the connection and survive secret rotation only`() {
+        val created = exchange(HttpMethod.POST, "/api/admin/kids",
+            """{"name":"Permission test child","color":"#7c3aed","accountNames":["morgan"]}""")
+        val kid = com.fasterxml.jackson.databind.ObjectMapper().readTree(created.body).path("id").asText()
+        val path = "/api/school-connection/config?kid=$kid"
+        val saved = exchange(HttpMethod.PUT, path,
+            """{"provider":"ELTERNPORTAL","url":"https://school.eltern-portal.org","username":"parent@example.test","password":"synthetic-secret","allowReceiptDownloads":true,"shareConnectedMessages":true}""")
+        assertThat(saved.statusCode.value()).isEqualTo(200)
+        assertThat(saved.body).contains("\"allowReceiptDownloads\":true", "\"shareConnectedMessages\":true")
+        val rotated = exchange(HttpMethod.PUT, path,
+            """{"provider":"ELTERNPORTAL","url":"https://school.eltern-portal.org","username":"parent@example.test","password":"synthetic-rotation"}""")
+        assertThat(rotated.body).contains("\"allowReceiptDownloads\":true", "\"shareConnectedMessages\":true")
+        val replaced = exchange(HttpMethod.PUT, path,
+            """{"provider":"ELTERNPORTAL","url":"https://school.eltern-portal.org","username":"other@example.test","password":"synthetic-replacement"}""")
+        assertThat(replaced.body).contains("\"allowReceiptDownloads\":false", "\"shareConnectedMessages\":false")
+    }
+
     @Test
     fun `school provider is exclusive and Schulmanager credentials stay masked`() {
         val created = exchange(HttpMethod.POST, "/api/admin/kids", """{"name":"School connection test","color":"#7c3aed","accountNames":["morgan"]}""")

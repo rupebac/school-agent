@@ -39,7 +39,7 @@ class SchulmanagerClientTest {
                             assertThat(req.path("parameters").path("action").path("action").asText()).isEqualTo("findByPk")
                             assertThat(req.toString()).contains("studentId", "7", "modules/letters/letter")
                             mapOf("id" to 1, "title" to "Trip", "text" to "<p>Bring a lunch.</p><p>Meet at school.</p>", "sentDate" to "2026-09-25", "answerDeadline" to "2026-10-01", "studentStatuses" to listOf(mapOf("studentId" to 7)),
-                                "questions" to listOf(mapOf("text" to "May your child attend?")),
+                                "questions" to listOf(mapOf("id" to 1, "text" to "May your child attend?")),
                                 "attachments" to listOf(mapOf("id" to 12, "filename" to "letter.pdf", "contentType" to "application/pdf", "file" to json.writeValueAsString(listOf(1, "letters", "file", "secret-key", "application/pdf", 15, "letter.pdf")))))
                         }
                         "get-remote-storage-url" -> base

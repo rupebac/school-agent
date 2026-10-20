@@ -9,7 +9,7 @@
         <button type="button" (click)="completeCase()"><app-icon name="check" [size]="15" [stroke]="2.4" />{{ 'actions.done' | t }}</button>
       }
       @if (d.informationOnly && d.status !== 'COMPLETED' && d.status !== 'CANCELLED') {
-        <button type="button" (click)="markRead(d)">{{ d.read ? ('inbox.markUnread' | t) : ('inbox.markRead' | t) }}</button>
+        <button type="button" [disabled]="d.schoolUpdatePending" (click)="markRead(d)">{{ d.read ? ('inbox.markUnread' | t) : ('inbox.markRead' | t) }}</button>
       }
       @if (d.canUndo) { <button type="button" class="ghost" (click)="undo(d)">{{ 'inbox.undoDone' | t }}</button> }
       <div class="matter-menu" (keydown)="menuKey($event)" (focusout)="menuFocusOut($event)">
@@ -20,7 +20,7 @@
         @if (moreOpen()) {
           <div id="case-more-menu" class="more-menu" role="menu" [attr.aria-label]="'case.moreAria' | t">
             @if (d.status !== 'COMPLETED' && d.status !== 'CANCELLED') {
-              <button type="button" role="menuitemcheckbox" [attr.aria-checked]="!!d.informationOnly" (click)="classify(d)">
+              <button type="button" role="menuitemcheckbox" [disabled]="d.schoolUpdatePending" [attr.aria-checked]="!!d.informationOnly" (click)="classify(d)">
                 <span class="menu-check" aria-hidden="true">{{ d.informationOnly ? '✓' : '' }}</span>
                 <span>{{ 'case.infoOnly' | t }}<small>{{ 'case.infoOnlyHint' | t }}</small></span>
               </button>
@@ -71,6 +71,7 @@
       </div>
     }
     @if (d.classificationReview) { <p class="warn">{{ 'case.reviewInfo' | t }}</p> }
+    @if (d.schoolUpdatePending) { <p class="warn" role="status">{{ 'case.schoolUpdatePending' | t }}</p> }
     @if (d.muted) {
       <p class="muted">{{ 'case.mutedNote' | t }}</p>
     }
@@ -331,6 +332,43 @@
         }
       </div>
     </section>
+  }
+
+  @if (d.schoolPayments?.length) {
+    <details class="block">
+      <summary>{{ 'case.schoolPayments' | t }}</summary>
+      <p class="muted">{{ 'case.schoolPaymentsHint' | t }}</p>
+      @for (item of d.schoolPayments; track $index) {
+        <h3>{{ item.title }}</h3>
+        <p>{{ ('school.payment.' + item.status) | t }}</p>
+        <p>{{ 'case.schoolPaymentAmounts' | t: { total: schoolMoney(item.totalMinor, item.currency), paid: schoolMoney(item.paidMinor, item.currency) } }}</p>
+        <p class="muted">{{ 'case.schoolPaymentObserved' | t }}: {{ item.observedAt | ldate: 'd MMM y, HH:mm' }}</p>
+      }
+    </details>
+  }
+  @if (d.schoolObservations?.length) {
+    <details class="disclose">
+      <summary>{{ 'case.schoolStatus' | t }}</summary>
+      <p class="muted">{{ 'case.schoolStatusHint' | t }}</p>
+      @for (item of d.schoolObservations; track $index) {
+        <p><strong>{{ item.title }}</strong> · {{ 'case.version' | t: { n: item.version } }}</p>
+        <p>{{ 'case.receipt' | t }}: {{ ('school.response.' + item.receipt) | t }} ·
+          {{ 'case.response' | t }}: {{ ('school.response.' + item.response) | t }}</p>
+        @if (item.deadline) { <p>{{ 'case.responseDeadline' | t }}: {{ item.deadline | ldate: (item.deadlineAllDay ? 'd MMM y' : 'd MMM y HH:mm') }}</p> }
+        @if (item.lastSuccessAt) { <p class="muted">{{ 'case.checked' | t }}: {{ item.lastSuccessAt | ldate: 'd MMM y HH:mm' }}</p> }
+        @if (item.failureCode) { <p class="warn">{{ 'case.contentCheckFailed' | t }}</p> }
+      }
+    </details>
+  }
+  @if (d.previousSources?.length) {
+    <details class="disclose">
+      <summary>{{ 'case.previousVersions' | t }}</summary>
+      <p class="muted">{{ 'case.previousVersionsHint' | t }}</p>
+      @for (s of d.previousSources; track s.id) {
+        <p>{{ s.title }} @if (s.schoolVersion) { · {{ 'case.version' | t: { n: s.schoolVersion } }} }</p>
+        <button type="button" class="ghost" (click)="downloadOriginal(s.id)">{{ 'case.downloadPrevious' | t }}</button>
+      }
+    </details>
   }
 
   @if (d.evidence.length) {

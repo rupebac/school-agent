@@ -43,6 +43,9 @@ class SchoolCase(
     var classificationReview: Boolean = false,
     var completionSnapshot: String? = null,
     var suppressInitialNotification: Boolean = false,
+    var schoolUpdatePending: Boolean = false,
+    var schoolPreviousStatus: String? = null,
+    var schoolNotificationPending: Boolean = false,
 ) {
     fun isInfo(): Boolean = infoOverride ?: informationOnly
     fun isClosed(): Boolean = status == CaseStatus.COMPLETED || status == CaseStatus.CANCELLED

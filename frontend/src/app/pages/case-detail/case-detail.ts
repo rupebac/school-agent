@@ -46,6 +46,10 @@ export class CaseDetailPage {
   readonly id = input.required<string>();
   readonly detail = signal<CaseDetail | null>(null);
   readonly error = signal<string | null>(null);
+  schoolMoney(minor: number | null, currency: string): string {
+    return minor === null ? this.i18n.t('school.response.UNKNOWN') :
+      new Intl.NumberFormat(this.i18n.lang(), { style: 'currency', currency }).format(minor / 100);
+  }
   readonly reading = signal<SourceReading | null>(null);
   readonly readingId = signal<string | null>(null);
   private loadVersion = 0;
@@ -234,6 +238,7 @@ export class CaseDetailPage {
   }
 
   canCompleteCase(d: CaseDetail): boolean {
+    if (d.schoolUpdatePending) return false;
     if (d.status === 'COMPLETED' || d.status === 'CANCELLED') return false;
     if (d.informationOnly) return false;
     return d.status === 'ACTION_REQUIRED' || d.status === 'WAITING_FOR_PARENT'
@@ -244,7 +249,7 @@ export class CaseDetailPage {
     this.store.complete(this.id(), () => {
       this.actions.refresh();
       this.load(this.id());
-    });
+    }, this.detail()?.revision);
   }
 
   feedback(type: string): void {

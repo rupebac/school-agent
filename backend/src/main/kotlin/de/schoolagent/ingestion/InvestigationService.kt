@@ -80,6 +80,9 @@ class InvestigationService(
         val notes = mutableListOf<String>()
 
         val sources = sourceRepo.findByCaseId(caseId).filter { it.fetchStatus == FetchStatus.FETCHED }
+        val rootSources = sources.filter { it.sourceType !in setOf(SourceType.WEBPAGE, SourceType.WEBPAGE_JS) }
+        val generation = DedupKeys.sha256(rootSources.map { "${it.id}:${it.contentHash}" }.sorted().joinToString(","))
+        val linkOrigins = mutableMapOf<String, MutableSet<String>>()
         val candidateLinks = mutableSetOf<String>()
 
         for (source in sources) {
@@ -91,20 +94,23 @@ class InvestigationService(
             }
             val extracted = TextExtractor.byMimeType(bytes, mime) ?: continue
             recordStep(investigation.id, StepType.PARSE_DOCUMENT, source.storageRef ?: source.id.toString(), StepOutcome.OK)
-            candidateLinks += extracted.links.mapNotNull(Links::canonicalize)
+            val sourceLinks = extracted.links.mapNotNull(Links::canonicalize)
+            candidateLinks += sourceLinks
+            val origins = source.derivedFromSources?.split(",")?.filter(String::isNotBlank) ?: listOf(source.id.toString())
+            sourceLinks.forEach { linkOrigins.getOrPut(it) { mutableSetOf() }.addAll(origins) }
             recordFacts(caseId, source.id, extracted.text)
             extraction.extract(caseId, source.id, extracted.text)
 
             // scanned PDFs have no text layer — let the vision model read the pages (spec §13)
             val isPdf = mime?.contains("pdf", ignoreCase = true) == true
             if (isPdf && extracted.text.trim().length < MIN_TEXT_FOR_PDF) {
-                visionExtractFromImages(caseId, source.id, TextExtractor.renderPdfPages(bytes, maxPages = 4), investigation.id)
+                visionExtractFromImages(caseId, source.id, TextExtractor.renderPdfPages(bytes, maxPages = 3), investigation.id)
             }
         }
 
         val toCrawl = candidateLinks
             .filter { Links.isRelevant("", it) }
-            .filter { !sourceRepo.existsByDedupKey(DedupKeys.source(SourceType.WEBPAGE, "$caseId:$it")) }
+            .filter { url -> sources.none { it.canonicalUrl == url && it.sourceType in setOf(SourceType.WEBPAGE, SourceType.WEBPAGE_JS) } }
             .take(MAX_PAGES_PER_CASE)
 
         for (url in toCrawl) {
@@ -118,7 +124,8 @@ class InvestigationService(
                         caseId = caseId,
                         sourceType = SourceType.WEBPAGE,
                         externalId = canonical,
-                        dedupKey = DedupKeys.source(SourceType.WEBPAGE, "$caseId:$canonical"),
+                        dedupKey = DedupKeys.source(SourceType.WEBPAGE, "$caseId:$canonical:$generation"),
+                        derivedFromSources = linkOrigins[url]?.sorted()?.joinToString(","),
                         contentHash = hash,
                         title = page.finalUrl,
                         canonicalUrl = canonical,
@@ -152,7 +159,8 @@ class InvestigationService(
                             caseId = caseId,
                             sourceType = SourceType.WEBPAGE_JS,
                             externalId = canonical,
-                            dedupKey = DedupKeys.source(SourceType.WEBPAGE_JS, "$caseId:$canonical"),
+                            dedupKey = DedupKeys.source(SourceType.WEBPAGE_JS, "$caseId:$canonical:$generation"),
+                            derivedFromSources = linkOrigins[url]?.sorted()?.joinToString(","),
                             contentHash = stored,
                             title = rendered.title ?: canonical,
                             canonicalUrl = canonical,

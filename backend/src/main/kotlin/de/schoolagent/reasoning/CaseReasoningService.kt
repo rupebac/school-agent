@@ -76,6 +76,12 @@ class CaseReasoningService(
     private fun mergeInto(source: SchoolCase, target: SchoolCase, parsed: ParsedDecision) {
         require(source.childId == target.childId) { "cannot merge different children" }
         val now = clock.instant()
+        val portalCorrection = sourceRepo.findByCaseId(source.id).any { it.schoolItemKey != null }
+        if (portalCorrection && !target.schoolUpdatePending) {
+            target.schoolPreviousStatus = target.status.name
+            target.schoolUpdatePending = true
+        }
+        source.schoolUpdatePending = false
         when (target.status) {
             CaseStatus.INGESTING, CaseStatus.INVESTIGATING, CaseStatus.READY_FOR_REASONING -> Unit // already in flight
             else -> {
@@ -87,17 +93,21 @@ class CaseReasoningService(
         }
         target.suppressInitialNotification = source.suppressInitialNotification || target.suppressInitialNotification
         target.investigationComplete = false
-        sourceRepo.findByCaseId(source.id).forEach {
+        sourceRepo.findAllByCaseId(source.id).forEach {
             it.caseId = target.id
             it.updatedAt = now
             sourceRepo.save(it)
         }
-        evidenceRepo.findByCaseId(source.id).forEach {
+        evidenceRepo.findAllByCaseId(source.id).forEach {
             it.caseId = target.id
             evidenceRepo.save(it)
         }
         val targetActions = actionRepo.findByCaseId(target.id)
         actionRepo.findByCaseId(source.id).forEach {
+            if (it.dedupKey.startsWith("school-response:") || it.dedupKey.startsWith("act:school:")) {
+                it.caseId = target.id; it.updatedAt = now; actionRepo.save(it)
+                return@forEach
+            }
             val newKey = DedupKeys.action(target.id, it.title)
             if (actionRepo.existsByDedupKey(newKey)) return@forEach
             if (targetActions.any { existing -> TitleSimilarity.similar(existing.title, it.title) }) return@forEach
@@ -108,6 +118,10 @@ class CaseReasoningService(
         }
         val targetEvents = eventRepo.findByCaseId(target.id)
         eventRepo.findByCaseId(source.id).forEach {
+            if (it.dedupKey.startsWith("evt:school:")) {
+                it.caseId = target.id; it.updatedAt = now; eventRepo.save(it)
+                return@forEach
+            }
             val newKey = DedupKeys.event(target.id, it.eventType, it.title)
             if (eventRepo.existsByDedupKey(newKey)) return@forEach
             val day = it.startTime.atZone(berlin).toLocalDate()
@@ -249,6 +263,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
     fun reason(caseId: UUID): ReasonResult {
         val schoolCase = caseRepo.findById(caseId).orElse(null)
             ?: throw IllegalArgumentException("case $caseId not found")
+        if (schoolCase.schoolUpdatePending) return ReasonResult("SKIPPED", schoolCase.importance.name, 0, 0, false)
         if (schoolCase.status != CaseStatus.READY_FOR_REASONING) {
             return ReasonResult("SKIPPED", schoolCase.importance.name, 0, 0, false)
         }
@@ -469,7 +484,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
     @Synchronized
     fun reasonAllPending(): Int {
         val states = listOf(CaseStatus.READY_FOR_REASONING)
-        val pending = caseRepo.findByStatusIn(states)
+        val pending = caseRepo.findByStatusIn(states).filterNot { it.schoolUpdatePending }
         var reasoned = 0
         for (c in pending) {
             runCatching {

@@ -32,6 +32,9 @@ class FileSystemDocumentStore(
         val file = pathFor(hash)
         if (!Files.exists(file)) {
             Files.createDirectories(file.parent)
+            require(Files.getFileStore(file.parent).usableSpace - content.size > 256L * 1024 * 1024) {
+                "Document storage has less than 256 MiB free; free space before retrying the import"
+            }
             val pending = Files.createTempFile(file.parent, ".document-", ".tmp")
             try {
                 Files.write(pending, content)

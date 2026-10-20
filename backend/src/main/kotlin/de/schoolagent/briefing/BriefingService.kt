@@ -65,7 +65,7 @@ class BriefingService(
         val kidList = kids.findAll().filter { accessible.contains(it.id) }.sortedBy { it.name }
         val today = tomorrow.minusDays(1)
         val singleKid = kidList.size == 1
-        val cases = currentCases().filter { !it.isClosed() && !it.muted }.associateBy { it.id }
+        val cases = currentCases().filter { !it.isClosed() && !it.schoolUpdatePending && !it.muted }.associateBy { it.id }
         val dayStart = tomorrow.atStartOfDay(berlin).toInstant()
         val dayEnd = tomorrow.plusDays(1).atStartOfDay(berlin).toInstant()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(dayStart, dayEnd)
@@ -143,7 +143,7 @@ class BriefingService(
         val lastWeekStart = weekStart.minusDays(7)
         val lastWeekEnd = weekStart.minusDays(1)
         val singleKid = kidList.size == 1
-        val cases = currentCases().filter { !it.isClosed() && !it.muted }.associateBy { it.id }
+        val cases = currentCases().filter { !it.isClosed() && !it.schoolUpdatePending && !it.muted }.associateBy { it.id }
         val weekEvents = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(
             weekStart.atStartOfDay(berlin).toInstant(),
             weekEnd.plusDays(1).atStartOfDay(berlin).toInstant(),
@@ -219,9 +219,11 @@ class BriefingService(
         val end = if (weekly) start.plusDays(6) else start
         val previousStart = start.minusDays(7)
         val allCases = caseRepo.findAll()
+        val allRequirements = requirementRepo.findAll()
+        val homeworkCases = allRequirements.filter { it.status == RequirementStatus.OPEN && it.dedupKey.startsWith("req:school:") }.map { it.caseId }.toSet()
         val visibility = relevance?.current(allCases).orEmpty()
-        val activeCases = allCases.filter { visibility[it.id]?.archived != true && !it.isClosed() && !it.muted &&
-            it.childId in allowed && (weekly || it.importanceScore >= DAILY_MIN_SCORE) }.associateBy { it.id }
+        val activeCases = allCases.filter { visibility[it.id]?.archived != true && !it.isClosed() && !it.schoolUpdatePending && !it.muted &&
+            it.childId in allowed && (weekly || it.importanceScore >= DAILY_MIN_SCORE || it.id in homeworkCases) }.associateBy { it.id }
         val projections = copy?.current(activeCases.values.toList()).orEmpty()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(start.atStartOfDay(berlin).toInstant(),
             end.plusDays(1).atStartOfDay(berlin).toInstant()).also { candidates ->
@@ -243,7 +245,7 @@ class BriefingService(
             it.eventType !in setOf(de.schoolagent.domain.enums.EventType.BRING_ITEM, de.schoolagent.domain.enums.EventType.DEADLINE, de.schoolagent.domain.enums.EventType.PAYMENT, de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)
         }
         val actions = actionRepo.findByStatusIn(openStates).filter { activeCases[it.caseId]?.isInfo() == false }
-        val needs = requirementRepo.findAll().filter { it.status == RequirementStatus.OPEN && activeCases[it.caseId]?.isInfo() == false }
+        val needs = allRequirements.filter { it.status == RequirementStatus.OPEN && activeCases[it.caseId]?.isInfo() == false }
         val home = whatsapp.config().frontendUrl.trimEnd('/')
         return kids.findAll().filter { it.id in allowed }.sortedBy { it.name }.mapNotNull { kid ->
             val rows = mutableListOf<String>()
@@ -279,6 +281,11 @@ class BriefingService(
                     ?: group.map { projection?.actions?.get(it.id.toString()) ?: it.title }.distinct().joinToString("; ")
                 rows += "Still open · ${date.format(dayFmt)} · $reminder · $home/cases/$id"
             }
+            needs.filter { it.caseId in activeCases && activeCases[it.caseId]?.childId == kid.id &&
+                it.relevantOn == null && it.dedupKey.startsWith("req:school:") }
+                .sortedByDescending { it.updatedAt }.take(20).forEach {
+                    rows += "Homework · ${it.description} · No school deadline supplied · $home/cases/${it.caseId}"
+                }
             if (rows.isEmpty()) null else Plan(kid.id, kid.name,
                 if (weekly) "${start.format(monthDay)} – ${end.format(monthDay)}"
                 else start.format(dayFmt), rows)

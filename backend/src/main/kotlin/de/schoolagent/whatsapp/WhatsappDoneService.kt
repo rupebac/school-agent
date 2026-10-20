@@ -53,6 +53,7 @@ class WhatsappDoneService(
         try {
             inbox.accessible(id, principal)
         } catch (_: ResponseStatusException) { return WaCopy.doneUnavailable(lang) }
+        if (c.schoolUpdatePending) return WaCopy.doneChanged(lang)
         if (c.status == CaseStatus.COMPLETED) return WaCopy.alreadyDone(lang, c.title)
         if (c.isInfo() || c.isClosed() ||
             c.status !in setOf(CaseStatus.ACTION_REQUIRED, CaseStatus.WAITING_FOR_PARENT, CaseStatus.NEEDS_REVIEW))

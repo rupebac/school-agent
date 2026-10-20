@@ -67,7 +67,9 @@ WhatsApp and configurable AI extraction. Deployments and family data are private
 - User-facing copy supports English/Spanish. Never hardcode family names in UI text.
 - Keep ingestion idempotent. Case mutations use the state machine, history and audit.
   Human actors use a generic label; personal read/acknowledgment state uses user IDs.
-- External school/email write actions remain forbidden in v1. Existing WhatsApp
+- External school/email write actions remain forbidden in v1, except automatic receipt
+  confirmation caused by PDF downloads when explicitly enabled for that connection.
+  Survey answers and consent submissions remain manual. Existing WhatsApp
   notifications and authorized Calendar projections follow their established policy.
 - Z.ai uses the Anthropic-compatible `https://api.z.ai/api/anthropic` endpoint for
   coding-plan quota; do not silently switch it to the pay-as-you-go endpoint.

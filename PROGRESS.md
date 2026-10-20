@@ -5,6 +5,25 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Portal reconciliation is implemented locally with additive migration V34:
+both providers share complete document manifests, immutable source history,
+current-evidence selection, guarded correction operations and completion rules.
+Elternportal PDF downloads have an explicit per-connection receipt permission;
+connected-account message sharing is separately configurable. Survey and consent
+submissions remain manual. School receipts, form responses and payment balances
+are shown separately from family Done.
+
+Additional adapters cover Elternportal noticeboard, class timetable changes and
+classbook homework; Schulmanager single-child Messenger, personal timetable,
+homework and typed invoice observations. Their verified boundaries and deliberately
+unavailable capabilities are recorded in [the coverage plan](docs/PORTAL-COVERAGE-PLAN.md).
+Initial imports are quiet; optional feed failures do not block letter health.
+Validation: 473 backend tests and 88 frontend tests pass, including real PostgreSQL
+revision/payment/homework regressions. The production frontend builds successfully.
+Shared-browser checks verify receipt/response/history and payment balance views in
+English/Spanish, including a narrow mobile viewport. Privacy and secret scans pass.
+Release verification is in progress; this paragraph is not a deployment claim.
+
 The recovery CI fixture waits for PostgreSQL's final TCP server instead of the
 temporary initialization socket. A delayed initialization fixture reproduces the old
 readiness race and verifies initialization completes before backup/restore checks.
@@ -129,6 +148,10 @@ notification preferences, email ingestion, document reading and a filtered calen
 
 ## Remaining validation and improvements
 
+- [Portal coverage and reconciliation plan](docs/PORTAL-COVERAGE-PLAN.md) reviews
+  same-ID letter corrections, superseded evidence, local versus school status,
+  payments and additional feeds. Its implementation-status section distinguishes
+  verified adapters, bounded coverage and remaining provider limitations.
 - Populated school payment/report layouts need verification against authorized live
   records; empty feeds and denial responses do not prove compatibility with all layouts.
 - Live Google insert/backfill behavior is verified with an authorized connected calendar.

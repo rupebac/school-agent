@@ -11,6 +11,7 @@ data class PortalBrief(
     val pdfName: String?,
     val classes: String?,
     val csrf: String,
+    val receipt: String = "UNKNOWN",
 )
 
 class ElternportalException(message: String, val authRelated: Boolean = false) : RuntimeException(message)
@@ -18,7 +19,7 @@ class ElternportalException(message: String, val authRelated: Boolean = false) :
 /**
  * Elternportal access (spec §6): direct HTTP, read-only. No public API exists,
  * so we login like a browser (CSRF + PHP session) and parse the brief list.
- * This is the only read path — v1 never confirms receipt or changes anything.
+ * PDF downloads can automatically record receipt; callers must obtain that permission.
  */
 interface ElternportalClient {
     /** Establishes a fresh session; returns true on success. */
@@ -64,6 +65,7 @@ class ElternportalParser {
                 pdfName = pdfName,
                 classes = classes,
                 csrf = csrf,
+                receipt = if (row.hasClass("eb-acknowledged")) "ACKNOWLEDGED" else "PENDING",
             )
             lastNumber = null
         }

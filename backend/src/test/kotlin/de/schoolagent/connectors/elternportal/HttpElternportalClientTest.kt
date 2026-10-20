@@ -60,13 +60,22 @@ class HttpElternportalClientTest {
     @AfterEach fun stop() = server.stop(0)
 
     @Test fun `fresh login selects the requested child and verifies letters through real client code`() {
-        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test", allowReceiptDownloads = true)).use { session ->
             val child = session.selectStudent(SchoolStudentScope("Jamie", "8C", null))!!
             assertThat(child.id).isEqualTo("42"); assertThat(selections).containsExactly("42")
             val letter = session.notices(child.id).single()
             assertThat(session.documents(letter, child.id).single().bytes.decodeToString()).startsWith("%PDF-")
             assertThat(downloads).isEqualTo(1)
             assertThat(session.records(SchoolStudentScope("Jamie", "8C", child.id), LocalDate.of(2026, 10, 11), LocalDate.of(2027, 8, 31)).single { it.kind == SchoolRecordKind.EXAM }.records).hasSize(1)
+        }
+    }
+    @Test fun `PDF retrieval is blocked until automatic receipt permission is explicitly granted`() {
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
+            val child = session.selectStudent(SchoolStudentScope("Jamie", "8C", null))!!
+            val notice = session.notices(child.id).single()
+            assertThat(session.canAcquire(notice)).isFalse()
+            assertThatThrownBy { session.documents(notice, child.id) }.isInstanceOf(SchoolConnectionException::class.java)
+            assertThat(downloads).isZero()
         }
     }
     @Test fun `school year rollover blocks only exam section while letters remain accessible`() {

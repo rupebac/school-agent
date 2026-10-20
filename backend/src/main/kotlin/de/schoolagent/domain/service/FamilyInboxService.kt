@@ -42,10 +42,10 @@ class FamilyInboxService(
     fun revision(id: UUID): String {
         val facts = listOf(
             changes.findByCaseIdOrderByCreatedAtAsc(id).filter { it.targetType == ChangeTargetType.ACTION && it.changeType == ChangeType.CHANGE }.map { it.id.toString() }.sorted(),
-            sources.findByCaseId(id).map { "${it.id}:${it.contentHash}" }.sorted(),
+            sources.findByCaseId(id).map { "${it.revisionIdentity ?: it.id}:${it.factHash ?: it.contentHash}" }.sorted(),
             events.findByCaseId(id).map { "${it.id}:${it.startTime}:${it.endTime}:${it.allDay}:${it.location}:${it.status}" }.sorted(),
             actions.findByCaseId(id).map { "${it.id}:${it.dueAt}:${it.required}:${it.externalUrl}" }.sorted(),
-            requirements.findByCaseId(id).map { "${it.id}:${it.description}:${it.relevantOn}:${it.required}" }.sorted(),
+            requirements.findByCaseId(id).map { "${it.id}:${if (it.dedupKey.startsWith("req:school:")) "" else it.description}:${it.relevantOn}:${it.required}" }.sorted(),
         )
         return hash(json.writeValueAsString(facts))
     }
@@ -53,9 +53,13 @@ class FamilyInboxService(
     fun readRevision(id: UUID, userId: UUID): String? =
         reads.findById(CaseReadId(id, userId)).orElse(null)?.revision
 
+    fun canUndo(c: SchoolCase): Boolean = !c.schoolUpdatePending && c.status == CaseStatus.COMPLETED &&
+        c.completionSnapshot?.let { runCatching { json.readTree(it).path("revision").asText() == revision(c.id) }.getOrDefault(false) } == true
+
     @Transactional
     fun markRead(id: UUID, user: UserDetails, read: Boolean, expectedRevision: String?) {
         val c = locked(id, user)
+        if (read && c.schoolUpdatePending) throw ResponseStatusException(HttpStatus.CONFLICT, "school information changed; wait for the update to be reviewed")
         if (!c.isInfo()) throw ResponseStatusException(HttpStatus.CONFLICT, "only information can be marked read")
         val userId = access.account(user)!!.id
         val current = revision(id)
@@ -70,6 +74,7 @@ class FamilyInboxService(
     @Transactional
     fun classify(id: UUID, user: UserDetails, info: Boolean) {
         val c = locked(id, user)
+        if (c.schoolUpdatePending) throw ResponseStatusException(HttpStatus.CONFLICT, "school information changed; wait for the update to be reviewed")
         if (c.isClosed()) throw ResponseStatusException(HttpStatus.CONFLICT, "undo Done before changing classification")
         val before = c.isInfo()
         c.infoOverride = info
@@ -87,8 +92,11 @@ class FamilyInboxService(
     }
 
     @Transactional
-    fun complete(id: UUID, user: UserDetails) {
+    fun complete(id: UUID, user: UserDetails, expectedRevision: String? = null) {
         val c = locked(id, user)
+        if (expectedRevision != null && expectedRevision != revision(id))
+            throw ResponseStatusException(HttpStatus.CONFLICT, "school information changed; refresh before completing")
+        if (c.schoolUpdatePending) throw ResponseStatusException(HttpStatus.CONFLICT, "school information changed; wait for the update to be reviewed")
         if (c.status == CaseStatus.COMPLETED) return
         if (c.status == CaseStatus.CANCELLED) throw ResponseStatusException(HttpStatus.CONFLICT, "cancelled matters cannot be marked Done")
         if (c.isInfo()) throw ResponseStatusException(HttpStatus.CONFLICT, "mark information as read instead")
@@ -111,6 +119,7 @@ class FamilyInboxService(
     @Transactional
     fun undo(id: UUID, user: UserDetails) {
         val c = locked(id, user)
+        if (c.schoolUpdatePending) throw ResponseStatusException(HttpStatus.CONFLICT, "school information changed; wait for the update to be reviewed")
         if (c.status != CaseStatus.COMPLETED || c.completionSnapshot == null) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "no shared completion to undo")
         }

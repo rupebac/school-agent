@@ -115,6 +115,23 @@ describe('Inbox background refresh', () => {
     http.verify();
   });
 
+  it('blocks Done while a school correction is pending and sends the displayed revision after review', () => {
+    const { fixture, http } = setup();
+    const cases = TestBed.inject(Cases);
+    cases.cases.update(list => list.map(c => ({ ...c, schoolUpdatePending: true, revision: 'new-revision' })));
+    fixture.detectChanges();
+    const button = fixture.nativeElement.querySelector('button.op') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain('school changed');
+    cases.cases.update(list => list.map(c => ({ ...c, schoolUpdatePending: false })));
+    fixture.detectChanges();
+    button.click();
+    const request = http.expectOne('/api/cases/one/complete');
+    expect(request.request.body).toEqual({ revision: 'new-revision' });
+    request.flush({ detail: 'School information changed' }, { status: 409, statusText: 'Conflict' });
+    expect(cases.error()).toBe('School information changed');
+  });
+
   it('collapses and reopens sections without remounting cards or sharing collapse state across children', async () => {
     const { fixture, cards } = setup();
     const original = cards();

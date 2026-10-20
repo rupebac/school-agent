@@ -63,6 +63,8 @@ class CasesController(
     private val inbox: de.schoolagent.domain.service.FamilyInboxService,
     private val relevance: de.schoolagent.inbox.CaseRelevanceService,
     private val actionLinks: de.schoolagent.actions.ActionLinkService,
+    private val schoolItems: de.schoolagent.domain.repo.SchoolItemRepository,
+    private val schoolRecords: de.schoolagent.domain.repo.SchoolRecordRepository,
 ) {
 
     @GetMapping
@@ -97,6 +99,7 @@ class CasesController(
                     inboxCopy = displayCopy[c.id],
                     relevance = relevanceById[c.id],
                     revision = inbox.revision(c.id),
+                    canUndo = inbox.canUndo(c),
                     read = access.account(user)?.id?.let { inbox.readRevision(c.id, it) == inbox.revision(c.id) } ?: false,
                     sourceTypes = caseSources.map { it.sourceType.name }.distinct(),
                     sourceDate = sent?.originalSentAt ?: sent?.receivedAt ?: c.openedAt,
@@ -142,9 +145,30 @@ class CasesController(
             classificationReview = found.classificationReview,
             revision = inbox.revision(id),
             read = access.account(user)?.id?.let { inbox.readRevision(id, it) == inbox.revision(id) } ?: false,
-            canUndo = found.status == CaseStatus.COMPLETED && found.completionSnapshot != null,
+            canUndo = inbox.canUndo(found),
             relevance = relevance.current(listOf(found))[found.id],
             sources = sourceRepo.findByCaseId(found.id).map { it.toDto() },
+            previousSources = sourceRepo.findAllByCaseId(found.id).filter { it.superseded }.map { it.toDto() },
+            schoolUpdatePending = found.schoolUpdatePending,
+            schoolPayments = schoolRecords.findCurrentByCaseId(found.id)
+                .filter { it.kind == de.schoolagent.connectors.school.SchoolRecordKind.PAYMENT }.map { record ->
+                    val raw = runCatching { com.fasterxml.jackson.databind.ObjectMapper().readTree(record.payload) }.getOrNull()
+                    val payment = raw?.path("payment")
+                    SchoolPaymentDto(raw?.path("title")?.asText().orEmpty(),
+                        payment?.path("status")?.asText("UNKNOWN") ?: "UNKNOWN",
+                        payment?.path("currency")?.asText("EUR") ?: "EUR",
+                        payment?.path("totalMinor")?.takeIf { it.isIntegralNumber }?.asLong(),
+                        payment?.path("paidMinor")?.takeIf { it.isIntegralNumber }?.asLong(), record.updatedAt)
+                },
+            schoolObservations = sourceRepo.findByCaseId(found.id).mapNotNull { it.schoolItemKey }.distinct().mapNotNull { key ->
+                schoolItems.findById(key).orElse(null)?.let { item ->
+                    val status = runCatching { com.fasterxml.jackson.databind.ObjectMapper().readTree(item.schoolStatus ?: "{}") }.getOrNull()
+                    SchoolObservationDto(sourceRepo.findById(item.sourceId).orElse(null)?.title, item.version,
+                        item.checkedAt, item.lastSuccessAt, item.failureCode, status?.path("receipt")?.asText("UNKNOWN") ?: "UNKNOWN",
+                        status?.path("response")?.asText("UNKNOWN") ?: "UNKNOWN", status?.path("deadline")?.asText(null),
+                        status?.path("deadlineAllDay")?.asBoolean(false) == true)
+                }
+            },
             evidence = evidenceRepo.findByCaseId(found.id).map { it.toDto() },
             actions = detailActions
                 .sortedWith(compareByDescending<ParentAction> { it.required }.thenBy(nullsLast()) { it.dueAt })
@@ -187,10 +211,12 @@ class CasesController(
     fun complete(
         @PathVariable id: UUID,
         @AuthenticationPrincipal user: org.springframework.security.core.userdetails.UserDetails,
+        @org.springframework.web.bind.annotation.RequestBody(required = false) body: CompleteRequest? = null,
     ): Map<String, String> {
-        inbox.complete(id, user)
+        inbox.complete(id, user, body?.revision)
         return mapOf("status" to "COMPLETED")
     }
+    data class CompleteRequest(val revision: String? = null)
 
     data class ReadRequest(val read: Boolean, val revision: String? = null)
     data class InfoRequest(val informationOnly: Boolean)

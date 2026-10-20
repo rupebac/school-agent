@@ -42,6 +42,12 @@ class Source(
     var failureMessage: String? = null,
     var createdAt: Instant = Instant.EPOCH,
     var updatedAt: Instant = Instant.EPOCH,
+    var superseded: Boolean = false,
+    var schoolItemKey: String? = null,
+    var schoolVersion: Int? = null,
+    var factHash: String? = null,
+    var revisionIdentity: String? = null,
+    var derivedFromSources: String? = null,
 )
 
 /** Distilled fact from one source, produced by the extraction model, spec §16. */

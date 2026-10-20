@@ -35,6 +35,7 @@ class ActionService(
     private val changeRepo: CaseChangeRepository,
     private val auditRepo: AuditEntryRepository,
     private val clock: Clock,
+    private val entityManager: jakarta.persistence.EntityManager? = null,
 ) {
 
     private val openStates = listOf(ActionStatus.OPEN, ActionStatus.ASSIGNED, ActionStatus.IN_PROGRESS, ActionStatus.OVERDUE)
@@ -52,6 +53,11 @@ class ActionService(
 
     fun complete(actionId: UUID, actor: Actor): ParentAction {
         val action = load(actionId)
+        if (caseRepo.lockById(action.caseId)?.schoolUpdatePending == true) throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.CONFLICT, "The school updated this matter. Review the corrected information before completing it.")
+        if (entityManager?.contains(action) == true) entityManager.refresh(action)
+        if (action.status == ActionStatus.COMPLETED) return action
+        require(action.status != ActionStatus.CANCELLED) { "A cancelled action cannot be completed" }
         action.status = ActionStatus.COMPLETED
         action.completedAt = clock.instant()
         action.updatedAt = clock.instant()

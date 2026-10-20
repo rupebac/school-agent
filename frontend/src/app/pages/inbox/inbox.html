@@ -137,7 +137,7 @@
       }
       <app-importance [score]="row.score" />
       @if (showDone(row)) {
-        <button type="button" class="op" (click)="done(row)">
+        <button type="button" class="op" [disabled]="row.schoolUpdatePending" [title]="row.schoolUpdatePending ? ('case.schoolUpdatePending' | t) : ''" (click)="done(row)">
           @if (!row.informationOnly) { <app-icon name="check" [size]="13" [stroke]="2.4" /> }
           {{ row.informationOnly ? (row.read ? ('inbox.markUnread' | t) : ('inbox.markRead' | t)) : ('actions.done' | t) }}
         </button>

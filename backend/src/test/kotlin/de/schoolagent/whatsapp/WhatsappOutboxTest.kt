@@ -58,6 +58,24 @@ class WhatsappOutboxTest {
         return saved.single()
     }
     private fun status(state: String, code: Int? = null) = ObjectMapper().readTree("""{"id":"wamid.1","status":"$state","errors":[{"code":${code ?: 0},"title":"Not delivered"}]}""")
+    @Test fun `current school corrections reach completed cases while stale and pending corrections cannot send`() {
+        val c = SchoolCase(title = "Synthetic event", importanceScore = 4, status = CaseStatus.COMPLETED)
+        every { cases.findById(c.id) } returns Optional.of(c)
+        every { inbox.revision(c.id) } returns "current"
+        val update = WaTemplates.messages(WaTemplates.Kind.INFO, UserLanguage.EN, "Synthetic Child",
+            c.title, "Event moved to a new date", emptyList(), "cases/${c.id}").single()
+        outbox.enqueue(parent.id, "school-change:${c.id}:current:${parent.id}:0", update, c.id)
+        outbox.send(saved.last())
+        assertThat(saved.last().status).isEqualTo(NotificationStatus.ACCEPTED)
+        outbox.enqueue(parent.id, "school-change:${c.id}:old:${parent.id}:0", update, c.id)
+        outbox.send(saved.last())
+        assertThat(saved.last().status).isEqualTo(NotificationStatus.SKIPPED)
+        c.schoolUpdatePending = true
+        outbox.enqueue(parent.id, "school-change:${c.id}:current:${parent.id}:1", update, c.id)
+        outbox.send(saved.last())
+        assertThat(saved.last().status).isEqualTo(NotificationStatus.SKIPPED)
+        verify(exactly = 1) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
+    }
     @Test fun `individual action send carries its notification identity while plans have no Done payload`() {
         val c = SchoolCase(title = "Synthetic letter", importanceScore = 4, status = CaseStatus.ACTION_REQUIRED)
         every { cases.findById(c.id) } returns Optional.of(c)

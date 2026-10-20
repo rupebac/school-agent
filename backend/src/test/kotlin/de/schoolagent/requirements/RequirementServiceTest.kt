@@ -44,6 +44,7 @@ class RequirementServiceTest {
         val c = SchoolCase(title = "Gym")
         val requirement = ChildRequirement(caseId = c.id, description = "Indoor shoes", dedupKey = "synthetic")
         every { requirementRepo.lockById(requirement.id) } returns requirement
+        every { requirementRepo.findById(requirement.id) } returns Optional.of(requirement)
         every { caseRepo.lockById(c.id) } returns c
         service.complete(requirement.id, Actor.MANUAL)
         service.complete(requirement.id, Actor.MANUAL)

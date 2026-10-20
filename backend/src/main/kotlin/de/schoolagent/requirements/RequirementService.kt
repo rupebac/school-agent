@@ -26,6 +26,7 @@ class RequirementService(
     private val changeRepo: CaseChangeRepository,
     private val auditRepo: AuditEntryRepository,
     private val clock: Clock,
+    private val entityManager: jakarta.persistence.EntityManager? = null,
 ) {
 
     fun createManual(caseId: UUID, description: String, relevantOn: LocalDate?, actor: Actor): ChildRequirement {
@@ -67,7 +68,11 @@ class RequirementService(
     }
 
     fun complete(id: UUID, actor: Actor): ChildRequirement {
+        val caseId = load(id).caseId
+        if (caseRepo.lockById(caseId)?.schoolUpdatePending == true) throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.CONFLICT, "The school updated this matter. Review the corrected information before completing it.")
         val current = requirementRepo.lockById(id) ?: throw IllegalArgumentException("Requirement not found")
+        if (entityManager?.contains(current) == true) entityManager.refresh(current)
         if (current.status == RequirementStatus.DONE) return current
         require(current.status == RequirementStatus.OPEN) { "Only open requirements can be completed" }
         current.status = RequirementStatus.DONE

@@ -4,10 +4,11 @@ import { I18n } from './i18n';
 
 export type SchoolProvider = 'ELTERNPORTAL' | 'SCHULMANAGER';
 export interface SchoolIdentity { institutionId: string | null; schoolName: string | null; students: { id: string; name: string; className?: string | null }[]; }
-export interface SchoolConnectionConfig { provider: SchoolProvider; url?: string; username: string; password?: string | null; studentId?: string | null; institutionId?: string | null; studentName?: string | null; }
+export interface SchoolConnectionConfig { provider: SchoolProvider; url?: string; username: string; password?: string | null; studentId?: string | null; institutionId?: string | null; studentName?: string | null; allowReceiptDownloads?: boolean; shareConnectedMessages?: boolean; }
 export interface PortalStatus {
   provider?: SchoolProvider | null;
   hasPassword?: boolean;
+  allowReceiptDownloads?: boolean; shareConnectedMessages?: boolean;
   studentId?: string | null;
   institutionId?: string | null;
   studentName?: string | null;

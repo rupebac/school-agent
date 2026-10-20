@@ -22,6 +22,7 @@ export interface CaseSummary {
   read?: boolean;
   revision?: string;
   canUndo?: boolean;
+  schoolUpdatePending?: boolean;
   sourceTypes?: string[];
   sourceDate?: string | null;
   sourceDateLabel?: string | null;
@@ -47,6 +48,8 @@ export interface CaseSummary {
 export interface SourceDto {
   forwardedBy?: string | null;
   originalSentAt?: string | null;
+  superseded?: boolean;
+  schoolVersion?: number | null;
   id: string;
   sourceType: string;
   externalId: string;
@@ -169,6 +172,7 @@ export interface CaseDetail {
   read?: boolean;
   revision?: string;
   canUndo?: boolean;
+  schoolUpdatePending?: boolean;
   sourceTypes?: string[];
   sourceDate?: string | null;
   sourceDateLabel?: string | null;
@@ -191,6 +195,10 @@ export interface CaseDetail {
   closedAt: string | null;
   muted?: boolean;
   sources: SourceDto[];
+  previousSources?: SourceDto[];
+  schoolPayments?: { title: string; status: string; currency: string; totalMinor: number | null; paidMinor: number | null; observedAt: string }[];
+  schoolObservations?: { title: string | null; version: number; checkedAt: string; lastSuccessAt: string | null;
+    failureCode: string | null; receipt: string; response: string; deadline: string | null; deadlineAllDay?: boolean }[];
   evidence: EvidenceDto[];
   actions: ParentActionDto[];
   requirements: ChildRequirementDto[];
@@ -260,7 +268,9 @@ export class Cases {
     });
   }
 
-  complete(id: string, after?: () => void): void { this.mutate(id, 'complete', {}, after); }
+  complete(id: string, after?: () => void, revision?: string): void {
+    this.mutate(id, 'complete', { revision: revision ?? this.cases().find(c => c.id === id)?.revision }, after);
+  }
   undo(id: string, after?: () => void): void { this.mutate(id, 'undo-complete', {}, after); }
   markRead(id: string, read: boolean, revision?: string, after?: () => void): void {
     this.mutate(id, 'read', { read, revision }, after);

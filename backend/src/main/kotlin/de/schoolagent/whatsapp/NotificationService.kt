@@ -48,6 +48,7 @@ class NotificationService(
     /** Called after reasoning decided a case. Score below 2 is not pinged. */
     @Transactional
     fun notifyDecision(caseEntity: SchoolCase) {
+        if (caseEntity.schoolUpdatePending) return
         if (caseEntity.suppressInitialNotification) {
             caseEntity.suppressInitialNotification = false
             caseRepo.save(caseEntity)
@@ -64,6 +65,7 @@ class NotificationService(
     /** School timetable changes use the existing information template, including a closed cancelled case. */
     @Transactional
     fun notifySchoolChange(caseEntity: SchoolCase, change: String, details: String) {
+        if (caseEntity.schoolUpdatePending) return
         if (caseEntity.suppressInitialNotification || caseEntity.muted || caseEntity.importanceScore < 2) {
             trace(caseEntity, when { caseEntity.suppressInitialNotification -> DiagnosticOutcome.QUIET_IMPORT
                 caseEntity.muted -> DiagnosticOutcome.MUTED; else -> DiagnosticOutcome.LOW_PRIORITY })

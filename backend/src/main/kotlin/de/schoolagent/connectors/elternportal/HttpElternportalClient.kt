@@ -11,8 +11,10 @@ import org.jsoup.Jsoup
 class HttpElternportalClient(private val http: de.schoolagent.crawler.PublicHttpSession = de.schoolagent.crawler.PublicHttpSession()) : ElternportalClient {
 
     private var baseUrl: String = ""
+    private var sessionStarted = System.nanoTime()
 
     override fun login(url: String, username: String, password: String) {
+        sessionStarted = System.nanoTime()
         baseUrl = url.trim().trimEnd('/')
         http.clearCookies()
 
@@ -72,6 +74,9 @@ class HttpElternportalClient(private val http: de.schoolagent.crawler.PublicHttp
 
     private fun ensureSession() {
         if (baseUrl.isBlank()) throw ElternportalException("not logged in", authRelated = true)
+        require(java.time.Duration.ofNanos(System.nanoTime() - sessionStarted) < java.time.Duration.ofMinutes(4)) {
+            "School session request budget reached"
+        }
     }
 
     private fun get(url: String): String {

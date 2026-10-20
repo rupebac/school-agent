@@ -33,12 +33,16 @@ class SchoolIngestionServiceTest {
     private var noticeId = "same-id"
     private var feeds = emptyList<SchoolRecordFeed>()
     private var recordsThrow = false
+    private var messageFeedFails = false
     private val lastSync = mutableMapOf<UUID, java.time.Instant>()
     private val connectors = SchoolProvider.entries.map { provider -> object : SchoolConnector {
         override val provider = provider
         override fun connect(credentials: SchoolCredentials) = object : SchoolSession {
             override val identity = SchoolIdentity("1", "School", emptyList())
             override fun notices(studentId: String?) = listOf(SchoolNotice(noticeId, "School letter", null, "https://school.example.test/letter"))
+            override fun noticeFeeds(studentId: String?) = listOf(SchoolNoticeFeed(SchoolNoticeKind.LETTER,
+                SchoolFeedStatus.AVAILABLE, notices(studentId))) + if (messageFeedFails)
+                listOf(SchoolNoticeFeed(SchoolNoticeKind.MESSAGE, SchoolFeedStatus.FAILED)) else emptyList()
             override fun records(scope: SchoolStudentScope, from: java.time.LocalDate, to: java.time.LocalDate): List<SchoolRecordFeed> {
                 if (recordsThrow) throw SchoolConnectionException("Module discovery failed")
                 return feeds
@@ -51,12 +55,16 @@ class SchoolIngestionServiceTest {
             }
         }
     } }
+    private val items = mockk<SchoolItemRepository>(relaxed = true)
+    private val itemRows = mutableMapOf<String, SchoolItem>()
+    private val accountLock = mockk<SchoolAccountLock>()
+    private lateinit var notices: SchoolNoticeIngestionService
     private lateinit var service: SchoolIngestionService
 
     @BeforeEach
     fun setup() {
         every { sources.findByDedupKey(any()) } answers { stored.find { it.dedupKey == firstArg<String>() } }
-        every { sources.save(any<Source>()) } answers { firstArg<Source>().also(stored::add) }
+        every { sources.save(any<Source>()) } answers { firstArg<Source>().also { s -> stored.removeIf { it.id == s.id }; stored.add(s) } }
         every { cases.save(any<SchoolCase>()) } answers { firstArg() }
         every { cases.findById(any()) } answers { Optional.ofNullable(created.find { it.id == firstArg<UUID>() }) }
         every { children.findById(any()) } answers { Optional.of(Child(id = firstArg(), name = "Child")) }
@@ -66,7 +74,24 @@ class SchoolIngestionServiceTest {
         every { tx.executeWithoutResult(any()) } answers { firstArg<Consumer<org.springframework.transaction.TransactionStatus>>().accept(mockk()); Unit }
         val documents = mockk<DocumentStore>()
         every { documents.put(any()) } answers { java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(firstArg())) }
-        service = SchoolIngestionService(connectors, config, documents, caseService, sources, cases, children, mockk(), mockk(), health, tx, Clock.systemUTC())
+        every { documents.get(any()) } returns null
+        every { items.findByChildId(any()) } answers { itemRows.values.filter { it.childId == firstArg<UUID>() } }
+        every { items.findById(any()) } answers { Optional.ofNullable(itemRows[firstArg<String>()]) }
+        every { items.save(any<SchoolItem>()) } answers { firstArg<SchoolItem>().also { itemRows[it.itemKey] = it } }
+        every { sources.findById(any()) } answers { Optional.ofNullable(stored.find { it.id == firstArg<UUID>() }) }
+        every { sources.findByCaseId(any()) } answers { stored.filter { it.caseId == firstArg<UUID>() && !it.superseded } }
+        every { sources.findBySchoolItemKey(any()) } answers { stored.filter { it.schoolItemKey == firstArg<String>() } }
+        every { cases.lockById(any()) } answers { created.find { it.id == firstArg<UUID>() } }
+        every { tx.execute<SchoolItem?>(any()) } answers { firstArg<org.springframework.transaction.support.TransactionCallback<SchoolItem?>>().doInTransaction(mockk()) }
+        every { accountLock.withAccount<Any>(any(), any()) } answers { synchronized(accountLock) { secondArg<() -> Any>()() } }
+        val revisions = mockk<SchoolItemRevisionRepository>()
+        every { revisions.save(any<SchoolItemRevision>()) } answers { firstArg() }
+        val changes = mockk<CaseChangeRepository>()
+        every { changes.save(any<CaseChange>()) } answers { firstArg() }
+        notices = SchoolNoticeIngestionService(items, revisions, sources, cases, children,
+            changes, caseService, config, documents, tx, Clock.systemUTC(), mockk(relaxed = true))
+        service = SchoolIngestionService(connectors, config, children, mockk(), mockk(), health, tx, Clock.systemUTC(),
+            noticeIngestion = notices, accountLock = accountLock)
     }
 
     private fun configure(child: UUID, provider: SchoolProvider) {
@@ -125,7 +150,7 @@ class SchoolIngestionServiceTest {
         verify(exactly = 2) { config.recordSync(child) }
         verify(exactly = 2) { health.success(SchoolProvider.SCHULMANAGER.healthType) }
         verify(exactly = 0) { health.failure(any(), any()) }
-        verify { config.recordSections(child, match { it.size == 4 && it.all { feed -> feed.status == SchoolFeedStatus.FAILED } }) }
+        verify { config.recordSections(child, match { it.size == SchoolRecordKind.entries.size && it.all { feed -> feed.status == SchoolFeedStatus.FAILED } }) }
     }
 
     @Test fun `siblings and manual tests serialize the same portal account viewing context`() {
@@ -146,8 +171,8 @@ class SchoolIngestionServiceTest {
                 }
             }
         }
-        val serialized = SchoolIngestionService(listOf(portal), config, mockk(relaxed = true), caseService, sources, cases, children,
-            mockk(relaxed = true), mockk(relaxed = true), health, tx, Clock.systemUTC())
+        val serialized = SchoolIngestionService(listOf(portal), config, children,
+            mockk(relaxed = true), mockk(relaxed = true), health, tx, Clock.systemUTC(), noticeIngestion = notices, accountLock = accountLock)
         val start = java.util.concurrent.CountDownLatch(1)
         java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor().use { pool ->
             val one = pool.submit { start.await(); serialized.syncOnce(first) }
@@ -157,5 +182,17 @@ class SchoolIngestionServiceTest {
         }
         assertThat(maximum.get()).isEqualTo(1)
         assertThat(active.get()).isZero()
+    }
+
+    @Test fun `optional message failure cannot hold the primary letter baseline open`() {
+        val child = UUID.randomUUID(); configure(child, SchoolProvider.SCHULMANAGER)
+        messageFeedFails = true
+        assertThat(service.syncOnce(child).failed).isEqualTo(1)
+        assertThat(lastSync[child]).isNotNull()
+        noticeId = "second-letter"
+        service.syncOnce(child)
+        assertThat(created.last().suppressInitialNotification).isFalse()
+        verify(exactly = 2) { health.success(SchoolProvider.SCHULMANAGER.healthType) }
+        verify(exactly = 0) { health.failure(any(), any()) }
     }
 }

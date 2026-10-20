@@ -40,6 +40,7 @@ class SchoolRecordIngestionService(
     private val transactions: TransactionTemplate,
     private val clock: Clock,
     private val diagnostics: IntegrationDiagnostics? = null,
+    private val requirements: ChildRequirementRepository? = null,
 ) {
     private val json = ObjectMapper()
     private val berlin = ZoneId.of("Europe/Berlin")
@@ -93,6 +94,20 @@ class SchoolRecordIngestionService(
                     val payload = payload(record)
                     val hash = DedupKeys.sha256(payload)
                     val previous = records.findById(key).orElse(null)
+                    if (record.timetable?.changed == false && previous == null) continue
+                    if (previous != null && previous.active && record.kind == SchoolRecordKind.PAYMENT &&
+                        paymentMetadataOnly(previous.payload, payload)) {
+                        transactions.executeWithoutResult {
+                            guard(childId, credentials, scope)
+                            val latest = records.findById(key).orElseThrow()
+                            if (latest.contentHash == previous.contentHash) {
+                                latest.payload = payload; latest.contentHash = hash
+                                records.save(latest)
+                            }
+                        }
+                        finish(previous)
+                        continue
+                    }
                     val sameFacts = previous?.contentHash == hash && previous.active
                     if (previous?.contentHash == hash && previous.active && !previous.wordingPending &&
                         previous.wordingVersion == SchoolRecordInterpreter.WORDING_VERSION) {
@@ -163,13 +178,35 @@ class SchoolRecordIngestionService(
         val now = clock.instant()
         val category = when (record.kind) { SchoolRecordKind.EXAM -> CaseCategory.EXAM; SchoolRecordKind.PAYMENT -> CaseCategory.PAYMENT
             SchoolRecordKind.FORGOTTEN_MATERIAL -> CaseCategory.MATERIAL; else -> CaseCategory.INFO }
-        val c = old?.let { cases.lockById(it.caseId) ?: throw IllegalStateException("School record case missing") }
+        val oldSource = old?.let { sources.findById(it.sourceId).orElseThrow() }
+        val c = old?.let { cases.lockById(oldSource?.caseId ?: it.caseId) ?: throw IllegalStateException("School record case missing") }
             ?: lifecycle.createCase(childId, copy.title, category, "school:$key")
         val before = old?.payload
+        val priorCaseStatus = c.status
+        val previousPayment = before?.let { runCatching { json.readTree(it).path("payment") }.getOrNull() }
+        val previousTotal = previousPayment?.path("totalMinor")?.takeIf { it.isIntegralNumber }?.asLong()
+        val previousPaid = previousPayment?.path("paidMinor")?.takeIf { it.isIntegralNumber }?.asLong()
+        val settled = record.payment?.status in setOf(SchoolPaymentStatus.SETTLED, SchoolPaymentStatus.CANCELLED)
+        val renewedPayment = record.kind == SchoolRecordKind.PAYMENT && record.payment?.let { p ->
+            (previousTotal != null && p.totalMinor != null && p.totalMinor > previousTotal) ||
+                (previousPaid != null && p.paidMinor != null && p.paidMinor < previousPaid)
+        } == true
+        val preserveDone = old != null && record.kind == SchoolRecordKind.PAYMENT &&
+            actions.findByDedupKey("act:$key")?.status == ActionStatus.COMPLETED && !renewedPayment
+        val reviewCompletedDuty = c.schoolUpdatePending || old != null && (
+            preserveDone && (record.payment == null || record.payment.status == SchoolPaymentStatus.UNKNOWN) ||
+                record.kind == SchoolRecordKind.HOMEWORK && requirements?.findByDedupKey("req:$key")?.status == RequirementStatus.DONE &&
+                json.readTree(old.payload).path("text").asText() != record.text)
+        if (reviewCompletedDuty && !c.schoolUpdatePending) {
+            c.schoolPreviousStatus = priorCaseStatus.name
+            c.schoolUpdatePending = true
+        }
         if (old != null && c.status != CaseStatus.INVESTIGATING) lifecycle.transition(c, CaseStatus.INVESTIGATING, Actor.SYSTEM, "Native school record changed")
-        c.title = copy.title; c.summary = copy.summary; c.category = category
-        c.informationOnly = record.kind != SchoolRecordKind.PAYMENT
-        c.importanceScore = if (record.kind == SchoolRecordKind.PAYMENT) 5 else 4
+        val merged = oldSource != null && sources.findByCaseId(c.id).any { it.id != oldSource.id }
+        if (!merged) { c.title = copy.title; c.summary = copy.summary; c.category = category }
+        c.informationOnly = record.kind !in setOf(SchoolRecordKind.PAYMENT, SchoolRecordKind.HOMEWORK)
+        val recordImportance = when (record.kind) { SchoolRecordKind.PAYMENT -> 5; SchoolRecordKind.HOMEWORK -> 2; else -> 4 }
+        c.importanceScore = if (merged) maxOf(c.importanceScore, recordImportance) else recordImportance
         c.importance = importanceFromScore(c.importanceScore)
         c.investigationComplete = true
         c.investigationNotes = "Authoritative native school record; no website crawl needed"
@@ -182,70 +219,112 @@ class SchoolRecordIngestionService(
             appendLine("${record.kind.label}: ${record.title}")
             record.date?.let { appendLine("${if (record.kind == SchoolRecordKind.EXAM) "Exam date" else "Reported date"}: $it") }
             record.time?.let { appendLine("Time: $it") }
-            copy.dueDate?.let { appendLine("Payment deadline: $it") }
+            copy.dueDate?.let { appendLine("${if (record.kind == SchoolRecordKind.PAYMENT) "Payment deadline" else "School deadline"}: $it") }
             appendLine(record.text)
         }.toByteArray(Charsets.UTF_8)
         val documentHash = documents.put(bytes)
-        val source = old?.let { sources.findById(it.sourceId).orElseThrow() } ?: Source(
+        val version = (oldSource?.schoolVersion ?: if (oldSource == null) 0 else 1) + 1
+        val source = Source(
             sourceType = if (credentials.provider == SchoolProvider.ELTERNPORTAL) SourceType.ELTERNPORTAL_RECORD else SourceType.SCHULMANAGER_RECORD,
-            externalId = "${record.kind}:${record.id}", dedupKey = "src:$key", contentHash = documentHash,
+            externalId = "${record.kind}:${record.id}", dedupKey = if (oldSource == null) "src:$key" else "src:$key:$version", contentHash = documentHash,
+            schoolVersion = version, revisionIdentity = oldSource?.revisionIdentity ?: oldSource?.id?.toString(),
             receivedAt = now, createdAt = now)
+        oldSource?.let { it.superseded = true; sources.save(it) }
         source.title = record.title; source.contentHash = documentHash; source.storageRef = documentHash
         source.originalSentAt = record.publishedAt
         source.canonicalUrl = record.url; source.mimeType = "text/plain"; source.byteSize = bytes.size.toLong()
         source.fetchStatus = FetchStatus.FETCHED; source.updatedAt = now
         sources.save(source)
+        lifecycle.attachSource(c, source)
         if (old == null) {
-            lifecycle.attachSource(c, source)
             lifecycle.transition(c, CaseStatus.INGESTING, Actor.SYSTEM, "Native school record imported")
         }
         c.investigationComplete = true
-        applyEvent(c, record, copy, key)
-        applyPayment(c, record, copy, key, credentials.provider)
+        if (!reviewCompletedDuty) {
+            applyEvent(c, record, copy, key)
+            applyPayment(c, record, copy, key, credentials.provider, preserveDone || settled)
+        }
+        if (record.kind == SchoolRecordKind.HOMEWORK && !reviewCompletedDuty) {
+            val repo = requireNotNull(requirements)
+            val r = repo.findByDedupKey("req:$key") ?: ChildRequirement(caseId = c.id, description = copy.summary,
+                dedupKey = "req:$key", createdAt = now)
+            r.description = copy.summary; r.relevantOn = record.dueDate
+            if (r.status != RequirementStatus.DONE) r.status = RequirementStatus.OPEN
+            r.updatedAt = now; repo.save(r)
+        }
+        if (merged) c.informationOnly = actions.findByCaseId(c.id).none { it.required && it.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED) } &&
+            requirements?.findByCaseId(c.id)?.none { it.required && it.status == RequirementStatus.OPEN } != false
         lifecycle.transition(c, CaseStatus.READY_FOR_REASONING, Actor.SYSTEM, "Native school facts validated")
-        lifecycle.transition(c, if (c.isInfo()) CaseStatus.INFORMATION_ONLY else CaseStatus.ACTION_REQUIRED, Actor.SYSTEM, "School record applied")
+        if (!reviewCompletedDuty) lifecycle.transition(c, if (c.isInfo()) CaseStatus.INFORMATION_ONLY else CaseStatus.ACTION_REQUIRED, Actor.SYSTEM, "School record applied")
+        if (!reviewCompletedDuty && record.kind == SchoolRecordKind.PAYMENT && (preserveDone || settled)) {
+            val outstanding = actions.findByCaseId(c.id).any { it.required && it.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED) } ||
+                requirements?.findByCaseId(c.id)?.any { it.required && it.status == RequirementStatus.OPEN } == true
+            if (!outstanding) lifecycle.transition(c, CaseStatus.COMPLETED, Actor.SYSTEM, if (settled) "School payment resolved" else "Local payment completion preserved")
+            events.findByDedupKey("evt:$key")?.let {
+                it.status = EventStatus.CANCELLED; it.googleSyncStatus = GoogleSyncStatus.PENDING; events.save(it)
+            }
+        }
+        if (!reviewCompletedDuty && record.kind == SchoolRecordKind.HOMEWORK && priorCaseStatus == CaseStatus.COMPLETED &&
+            actions.findByCaseId(c.id).none { it.required && it.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED) } &&
+            requirements?.findByCaseId(c.id)?.none { it.required && it.status == RequirementStatus.OPEN } == true)
+            lifecycle.transition(c, CaseStatus.COMPLETED, Actor.SYSTEM, "Completed assignment preserved after deadline update")
         changes.save(CaseChange(caseId = c.id, changeType = if (old == null) ChangeType.ADD else ChangeType.CHANGE,
             targetType = ChangeTargetType.CASE, beforeJson = before, afterJson = payload, createdAt = now))
         val stored = old ?: StoredSchoolRecord(key, namespace, childId, record.kind, record.id, record.date, hash, payload, c.id, source.id, updatedAt = now)
+        stored.caseId = c.id; stored.sourceId = source.id
         stored.contentHash = hash; stored.payload = payload; stored.recordDate = record.date
-        stored.active = true; stored.notificationPending = true; stored.projectionPending = true; stored.wordingPending = !copy.ai; stored.updatedAt = now
+        stored.active = true; stored.notificationPending = !reviewCompletedDuty && record.kind != SchoolRecordKind.HOMEWORK; stored.projectionPending = true; stored.wordingPending = !copy.ai; stored.updatedAt = now
         stored.wordingVersion = SchoolRecordInterpreter.WORDING_VERSION
         cases.flush(); sources.flush()
         return records.save(stored)
     }
 
     private fun applyEvent(c: SchoolCase, record: SchoolRecord, copy: SchoolRecordInterpreter.Copy, key: String) {
+        if (record.kind == SchoolRecordKind.HOMEWORK) return // Undated assignments do not invent Calendar appointments.
         val now = clock.instant()
         val date = if (record.kind == SchoolRecordKind.PAYMENT) copy.dueDate else record.date
         if (date != null) {
-            val type = when (record.kind) { SchoolRecordKind.EXAM -> EventType.EXAM; SchoolRecordKind.PAYMENT -> EventType.PAYMENT; else -> EventType.SCHOOL_REPORT }
+            val type = when (record.kind) { SchoolRecordKind.EXAM -> EventType.EXAM; SchoolRecordKind.PAYMENT -> EventType.PAYMENT
+                SchoolRecordKind.TIMETABLE_CHANGE -> EventType.TIMETABLE_CHANGE; else -> EventType.SCHOOL_REPORT }
             val event = events.findByDedupKey("evt:$key") ?: SchoolEvent(caseId = c.id, childId = c.childId, title = copy.title, eventType = type,
                 startTime = date.atStartOfDay(berlin).toInstant(), dedupKey = "evt:$key", createdAt = now)
             event.title = copy.title; event.eventType = type
             event.startTime = date.atTime(record.time ?: java.time.LocalTime.MIDNIGHT).atZone(berlin).toInstant()
             event.endTime = record.endTime?.let { date.atTime(it).atZone(berlin).toInstant() }
             require(event.endTime == null || event.endTime!! > event.startTime) { "Invalid native school event time range" }
-            event.allDay = record.time == null; event.status = EventStatus.PLANNED; event.updatedAt = now
+            event.allDay = record.time == null; event.status = if (record.timetable?.changed == false) EventStatus.CANCELLED else EventStatus.PLANNED;
+            event.googleSyncStatus = GoogleSyncStatus.PENDING; event.updatedAt = now
             events.save(event)
         } else events.findByDedupKey("evt:$key")?.let { it.status = EventStatus.CANCELLED; it.updatedAt = now; events.save(it) }
     }
 
-    private fun applyPayment(c: SchoolCase, record: SchoolRecord, copy: SchoolRecordInterpreter.Copy, key: String, provider: SchoolProvider) {
+    private fun applyPayment(c: SchoolCase, record: SchoolRecord, copy: SchoolRecordInterpreter.Copy, key: String, provider: SchoolProvider,
+                             resolved: Boolean = false) {
         val now = clock.instant()
         if (record.kind == SchoolRecordKind.PAYMENT) {
             val action = actions.findByDedupKey("act:$key") ?: ParentAction(caseId = c.id, title = copy.action!!, dedupKey = "act:$key", createdAt = now)
-            action.title = copy.action!!; action.description = copy.summary; action.externalUrl = record.url
+            action.title = if (record.payment?.status == SchoolPaymentStatus.UNKNOWN) "Check the school payment balance" else copy.action!!; action.description = copy.summary; action.externalUrl = record.url
             action.portalProvider = provider.name
             action.dueAt = copy.dueDate?.atStartOfDay(berlin)?.toInstant()
-            action.status = ActionStatus.OPEN; action.completedAt = null; action.updatedAt = now
+            action.status = when {
+                record.payment?.status == SchoolPaymentStatus.CANCELLED -> ActionStatus.CANCELLED
+                resolved -> ActionStatus.COMPLETED
+                else -> ActionStatus.OPEN
+            }
+            action.completedAt = if (resolved) action.completedAt ?: now else null; action.updatedAt = now
             actions.save(action)
         }
     }
 
     private fun cancel(old: StoredSchoolRecord) {
-        val c = cases.lockById(old.caseId) ?: return
-        if (c.status != CaseStatus.CANCELLED) lifecycle.transition(c, CaseStatus.CANCELLED, Actor.SYSTEM, "Removed from the verified class exam timetable")
-        events.findByCaseId(c.id).forEach { it.status = EventStatus.CANCELLED; it.updatedAt = clock.instant(); events.save(it) }
+        val source = sources.findById(old.sourceId).orElse(null)
+        val c = cases.lockById(source?.caseId ?: old.caseId) ?: return
+        old.caseId = c.id
+        events.findByDedupKey("evt:${old.recordKey}")?.let {
+            it.status = EventStatus.CANCELLED; it.googleSyncStatus = GoogleSyncStatus.PENDING; it.updatedAt = clock.instant(); events.save(it)
+        }
+        val otherFacts = sources.findByCaseId(c.id).any { it.id != old.sourceId }
+        if (!otherFacts && c.status != CaseStatus.CANCELLED) lifecycle.transition(c, CaseStatus.CANCELLED, Actor.SYSTEM, "Removed from the verified class exam timetable")
         changes.save(CaseChange(caseId = c.id, changeType = ChangeType.CANCEL, targetType = ChangeTargetType.CASE,
             beforeJson = old.payload, afterJson = "{\"withdrawnFromTimetable\":true}", createdAt = clock.instant()))
         old.active = false; old.notificationPending = true; old.projectionPending = true; old.updatedAt = clock.instant(); records.save(old)
@@ -253,12 +332,19 @@ class SchoolRecordIngestionService(
 
     /** Copy repair preserves completion and notifications; a newly grounded deadline is recorded as a fact change. */
     private fun refreshWording(record: StoredSchoolRecord, copy: SchoolRecordInterpreter.Copy) {
+        sources.findById(record.sourceId).orElse(null)?.caseId?.let { record.caseId = it }
         val c = cases.lockById(record.caseId) ?: return
+        if (c.schoolUpdatePending) return
         val before = json.writeValueAsString(mapOf("title" to c.title, "summary" to c.summary,
             "wordingPending" to record.wordingPending, "wordingVersion" to record.wordingVersion))
-        c.title = copy.title; c.summary = copy.summary; cases.save(c)
-        events.findByCaseId(c.id).forEach { it.title = copy.title; events.save(it) }
-        if (record.kind == SchoolRecordKind.PAYMENT) actions.findByCaseId(c.id).forEach {
+        if (sources.findByCaseId(c.id).none { it.id != record.sourceId }) {
+            c.title = copy.title; c.summary = copy.summary; cases.save(c)
+        }
+        events.findByDedupKey("evt:${record.recordKey}")?.let { it.title = copy.title; events.save(it) }
+        if (record.kind == SchoolRecordKind.HOMEWORK) requirements?.findByDedupKey("req:${record.recordKey}")?.let {
+            it.description = copy.summary; requirements.save(it)
+        }
+        if (record.kind == SchoolRecordKind.PAYMENT) actions.findByDedupKey("act:${record.recordKey}")?.let {
             it.title = copy.action!!; it.description = copy.summary
             val due = copy.dueDate?.atStartOfDay(berlin)?.toInstant()
             if (copy.ai && due != it.dueAt) {
@@ -289,6 +375,8 @@ class SchoolRecordIngestionService(
 
     private fun finish(stored: StoredSchoolRecord) = synchronized(effectLocks[(stored.recordKey.hashCode() and Int.MAX_VALUE) % effectLocks.size]) {
         val record = records.findById(stored.recordKey).orElse(null) ?: return@synchronized
+        val effectiveCaseId = sources.findById(record.sourceId).orElse(null)?.caseId ?: record.caseId
+        if (cases.findById(effectiveCaseId).orElse(null)?.schoolUpdatePending == true) return@synchronized
         fun acknowledgeProjection() = transactions.executeWithoutResult {
             kids.lockById(record.childId) ?: return@executeWithoutResult
             records.findById(record.recordKey).orElse(null)?.let {
@@ -299,7 +387,7 @@ class SchoolRecordIngestionService(
             }
         }
         if (record.projectionPending) runCatching {
-            if (project(record.caseId)) acknowledgeProjection()
+            if (project(effectiveCaseId)) acknowledgeProjection()
         }.onFailure { log.warn("School calendar projection will retry for {} ({})", record.caseId, it.javaClass.simpleName) }
         if (record.notificationPending) runCatching {
             // Suppression consumption, notification enqueue and outbox acknowledgement commit together.
@@ -309,7 +397,9 @@ class SchoolRecordIngestionService(
                 val current = records.findById(record.recordKey).orElse(null) ?: return@executeWithoutResult
                 if (!current.notificationPending || current.contentHash != record.contentHash || current.active != record.active ||
                     current.wordingPending != record.wordingPending) return@executeWithoutResult
-                val c = cases.findById(current.caseId).orElseThrow()
+                current.caseId = sources.findById(current.sourceId).orElse(null)?.caseId ?: current.caseId
+                val c = cases.lockById(current.caseId) ?: return@executeWithoutResult
+                if (c.schoolUpdatePending) return@executeWithoutResult
                 val change = changes.findByCaseIdOrderByCreatedAtAsc(c.id).lastOrNull {
                     it.beforeJson != null && it.afterJson != null && it.afterJson == current.payload
                 }
@@ -318,6 +408,8 @@ class SchoolRecordIngestionService(
                 val date = current.recordDate?.format(dateFormat)
                 val previousDate = oldDate?.let { runCatching { LocalDate.parse(it).format(dateFormat) }.getOrDefault(it) }
                 when {
+                    current.kind == SchoolRecordKind.TIMETABLE_CHANGE && json.readTree(current.payload).path("timetable").path("changed").asBoolean(true).not() ->
+                        notifications.notifySchoolChange(c, "Lesson restored", c.summary.orEmpty())
                     !current.active -> notifications.notifySchoolChange(c, "Cancelled", "Removed from the school's exam timetable. Previous date: $date.")
                     current.kind == SchoolRecordKind.EXAM && oldDate != null && oldDate != current.recordDate?.toString() && !c.suppressInitialNotification ->
                         notifications.notifySchoolChange(c, "Date changed", "Previously $previousDate; now $date.")
@@ -341,7 +433,32 @@ class SchoolRecordIngestionService(
     internal fun namespace(childId: UUID, credentials: SchoolCredentials, scope: SchoolStudentScope) = DedupKeys.sha256(
         "$childId|${credentials.provider}|${credentials.url.trimEnd('/')}|${credentials.username.trim().lowercase()}|${credentials.institutionId.orEmpty()}|${scope.studentId.orEmpty()}")
     private fun key(namespace: String, record: SchoolRecord) = "school:" + DedupKeys.sha256("$namespace|${record.kind}|${record.id}")
-    private fun payload(record: SchoolRecord) = json.writeValueAsString(linkedMapOf("id" to record.id, "kind" to record.kind,
+    private fun payload(record: SchoolRecord) = json.writeValueAsString(linkedMapOf<String, Any?>("id" to record.id, "kind" to record.kind,
         "title" to record.title, "text" to record.text, "date" to record.date?.toString(), "time" to record.time?.toString(),
-        "endTime" to record.endTime?.toString(), "dueDate" to record.dueDate?.toString(), "publishedAt" to record.publishedAt?.toString(), "url" to record.url))
+        "endTime" to record.endTime?.toString(), "dueDate" to record.dueDate?.toString(), "publishedAt" to record.publishedAt?.toString(), "url" to record.url
+        ).apply {
+            record.payment?.let { put("payment", it) }
+            record.timetable?.let { put("timetable", it) }
+        })
+
+    /** Adding typed metadata to an unchanged legacy invoice is not a new school instruction. */
+    internal fun paymentMetadataOnly(before: String, after: String): Boolean {
+        val old = json.readTree(before)
+        val next = json.readTree(after)
+        if (old.has("payment") || !next.hasNonNull("payment")) return false
+        fun comparable(node: com.fasterxml.jackson.databind.JsonNode): com.fasterxml.jackson.databind.JsonNode {
+            val copy = node.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+            copy.remove("payment")
+            val text = copy.path("text").asText().lineSequence()
+                .filterNot { it.startsWith("School payment status: ") }
+                .map { line ->
+                    if (line.startsWith("Requested amount: ") || line.startsWith("Already paid: "))
+                        Regex("\\d+(?:\\.\\d+)?(?= EUR)").replace(line) { it.value.toBigDecimal().stripTrailingZeros().toPlainString() }
+                    else line
+                }.joinToString("\n")
+            copy.put("text", text)
+            return copy
+        }
+        return comparable(old) == comparable(next)
+    }
 }

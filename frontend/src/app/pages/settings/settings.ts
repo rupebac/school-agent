@@ -66,6 +66,8 @@ export class SettingsPage implements OnInit {
   portalUrl = '';
   portalUser = '';
   portalPassword = '';
+  portalAllowReceiptDownloads = false;
+  portalShareMessages = false;
   oldPassword = '';
   newPassword = '';
   newPasswordRepeat = '';
@@ -237,6 +239,7 @@ export class SettingsPage implements OnInit {
     this.settingsKidId.set(id || null);
     this.portalUrl = ''; this.portalUser = ''; this.portalPassword = ''; this.shareWith = '';
     this.portalIdentity = null; this.portalStudentId = ''; this.portalProvider = 'ELTERNPORTAL';
+    this.portalAllowReceiptDownloads = false; this.portalShareMessages = false;
     this.google.busy.set(false); this.portal.busy.set(false);
     this.google.status.set(null);
     this.google.calendar.set(null);
@@ -258,6 +261,8 @@ export class SettingsPage implements OnInit {
       provider: this.portalProvider, url: this.portalUrl.trim(), username: this.portalUser.trim(),
       password: this.portalPassword || null, studentId: this.portalStudentId || null,
       institutionId: this.portalIdentity?.institutionId ?? null, studentName: student?.name ?? null,
+      shareConnectedMessages: this.portalShareMessages,
+      allowReceiptDownloads: this.portalProvider === 'ELTERNPORTAL' && this.portalAllowReceiptDownloads,
     }, s => this.applyPortal(s));
   }
 
@@ -265,6 +270,7 @@ export class SettingsPage implements OnInit {
     this.portalProvider = provider;
     this.portalUrl = ''; this.portalUser = ''; this.portalPassword = '';
     this.portalIdentity = null; this.portalStudentId = '';
+    this.portalAllowReceiptDownloads = false; this.portalShareMessages = false;
     this.portal.message.set(null);
     const saved = this.portal.status();
     if (saved?.provider === provider) this.applyPortal(saved);
@@ -272,6 +278,10 @@ export class SettingsPage implements OnInit {
 
   portalCredentialsChanged(): void {
     this.portalIdentity = null; this.portalStudentId = '';
+    const saved = this.portal.status();
+    if (saved && (saved.username !== this.portalUser || (this.portalProvider === 'ELTERNPORTAL' && saved.url !== this.portalUrl))) {
+      this.portalAllowReceiptDownloads = false; this.portalShareMessages = false;
+    }
   }
 
   discoverPortal(): void {
@@ -289,7 +299,9 @@ export class SettingsPage implements OnInit {
   portalMatchesSaved(): boolean {
     const saved = this.portal.status();
     return !!saved?.configured && this.portalProvider === saved.provider && this.portalUser === saved.username
-      && (this.portalProvider === 'ELTERNPORTAL' ? this.portalUrl === saved.url && this.portalPassword === saved.password
+      && this.portalShareMessages === !!saved.shareConnectedMessages
+      && (this.portalProvider === 'ELTERNPORTAL' ? this.portalUrl === saved.url && !this.portalPassword
+        && this.portalAllowReceiptDownloads === !!saved.allowReceiptDownloads
         : this.portalStudentId === saved.studentId && !this.portalPassword);
   }
 
@@ -328,7 +340,9 @@ export class SettingsPage implements OnInit {
     this.portalIdentity = s.studentId ? { institutionId: s.institutionId ?? null, schoolName: null, students: [{ id: s.studentId, name: s.studentName ?? 'Connected child' }] } : null;
     this.portalUrl = s.url ?? '';
     this.portalUser = s.username ?? '';
-    this.portalPassword = s.password ?? '';
+    this.portalPassword = '';
+    this.portalAllowReceiptDownloads = !!s.allowReceiptDownloads;
+    this.portalShareMessages = !!s.shareConnectedMessages;
   }
 
   private applyWhatsapp(s: {

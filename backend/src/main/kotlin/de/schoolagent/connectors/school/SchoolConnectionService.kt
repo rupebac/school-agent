@@ -25,24 +25,37 @@ class SchoolConnectionService(
         val password: String?, val hasPassword: Boolean, val studentId: String?, val institutionId: String?,
         val studentName: String?, val lastSync: Instant?,
         val sections: List<SectionStatus> = emptyList(),
+        val allowReceiptDownloads: Boolean = false,
+        val shareConnectedMessages: Boolean = false,
     )
-    data class SectionStatus(val kind: SchoolRecordKind, val label: String, val status: SchoolFeedStatus,
+    data class SectionStatus(val kind: String, val label: String, val status: SchoolFeedStatus,
                              val records: Int, val message: String?, val checkedAt: String, val lastSuccessAt: String? = null)
     private val json = com.fasterxml.jackson.databind.ObjectMapper()
     fun recordSections(childId: UUID, feeds: List<SchoolRecordFeed>) {
         val previous = sections(childId).associateBy { it.kind }
         if (feeds.isNotEmpty()) put(childId, "sections", json.writeValueAsString(feeds.map {
-            SectionStatus(it.kind, it.kind.label, it.status, it.records.size, it.message, clock.instant().toString(),
-                if (it.status == SchoolFeedStatus.AVAILABLE) clock.instant().toString() else previous[it.kind]?.lastSuccessAt)
-        }))
+            SectionStatus(it.kind.name, it.kind.label, it.status, it.records.size, it.message, clock.instant().toString(),
+                if (it.status == SchoolFeedStatus.AVAILABLE) clock.instant().toString() else previous[it.kind.name]?.lastSuccessAt)
+        } + previous.values.filter { old -> feeds.none { it.kind.name == old.kind } }))
     }
+    fun recordNoticeSections(childId: UUID, feeds: List<SchoolNoticeFeed>) {
+        val previous = sections(childId).associateBy { it.kind }
+        put(childId, "sections", json.writeValueAsString(feeds.map {
+            SectionStatus(it.kind.name, it.kind.name, it.status, it.notices.size, it.message, clock.instant().toString(),
+                if (it.status == SchoolFeedStatus.AVAILABLE) clock.instant().toString() else previous[it.kind.name]?.lastSuccessAt)
+        } + previous.values.filter { old -> feeds.none { it.kind.name == old.kind } }))
+    }
+    fun hasNoticeBaseline(childId: UUID, namespace: String) = value(childId, "notices.$namespace") != null
+    fun recordNoticeBaseline(childId: UUID, namespace: String) = put(childId, "notices.$namespace", clock.instant().toString())
     private fun sections(childId: UUID): List<SectionStatus> = value(childId, "sections")?.let { raw ->
-        runCatching { json.readTree(raw).map { SectionStatus(SchoolRecordKind.valueOf(it.path("kind").asText()), it.path("label").asText(),
+        runCatching { json.readTree(raw).map { SectionStatus(it.path("kind").asText(), it.path("label").asText(),
             SchoolFeedStatus.valueOf(it.path("status").asText()), it.path("records").asInt(), it.path("message").takeIf { m -> m.isTextual }?.asText(), it.path("checkedAt").asText(), it.path("lastSuccessAt").takeIf { m -> m.isTextual }?.asText()) } }.getOrDefault(emptyList())
     } ?: emptyList()
     data class SaveRequest(
         val provider: SchoolProvider, val username: String, val password: String? = null, val url: String? = null,
         val studentId: String? = null, val institutionId: String? = null, val studentName: String? = null,
+        val allowReceiptDownloads: Boolean? = null,
+        val shareConnectedMessages: Boolean? = null,
     )
 
     fun provider(childId: UUID): SchoolProvider? = value(childId, "provider")?.let(SchoolProvider::valueOf)
@@ -50,13 +63,16 @@ class SchoolConnectionService(
 
     fun credentials(childId: UUID): SchoolCredentials? = when (val provider = provider(childId)) {
         SchoolProvider.ELTERNPORTAL -> portal.config(childId)?.let {
-            it.password?.let { password -> SchoolCredentials(provider, it.url, it.username, password, value(childId, "student-id")) }
+            it.password?.let { password -> SchoolCredentials(provider, it.url, it.username, password, value(childId, "student-id"),
+                allowReceiptDownloads = value(childId, "allow-receipt-downloads") == "true",
+                shareConnectedMessages = value(childId, "share-connected-messages") == "true") }
         }
         SchoolProvider.SCHULMANAGER -> {
             val username = vault.read("schulmanager.$childId.username")
             val password = vault.read("schulmanager.$childId.password")
             if (username == null || password == null) null else SchoolCredentials(provider, SchulmanagerSession.BASE_URL,
-                username, password, value(childId, "student-id"), value(childId, "institution-id"))
+                username, password, value(childId, "student-id"), value(childId, "institution-id"),
+                shareConnectedMessages = value(childId, "share-connected-messages") == "true")
         }
         null -> null
     }
@@ -66,9 +82,10 @@ class SchoolConnectionService(
         val credentials = credentials(childId)
         val old = if (provider == SchoolProvider.ELTERNPORTAL) portal.config(childId) else null
         return Status(provider, credentials != null, credentials?.url ?: old?.url, credentials?.username ?: old?.username,
-            old?.password, credentials != null, credentials?.studentId, credentials?.institutionId,
+            null, credentials != null, credentials?.studentId, credentials?.institutionId,
             value(childId, "student-name"), value(childId, "last-sync")?.let(Instant::parse)
-                ?: if (provider == SchoolProvider.ELTERNPORTAL) portal.lastSync(childId) else null, sections(childId))
+                ?: if (provider == SchoolProvider.ELTERNPORTAL) portal.lastSync(childId) else null, sections(childId),
+            credentials?.allowReceiptDownloads == true, credentials?.shareConnectedMessages == true)
     }
 
     /** One active school connection per child, including callers using the legacy Elternportal API. */
@@ -93,13 +110,18 @@ class SchoolConnectionService(
             clearSchulmanager(childId, keepStudent = current?.provider == SchoolProvider.ELTERNPORTAL &&
                 current.username == request.username.trim() && current.url.trimEnd('/') == request.url.orEmpty().trimEnd('/'))
         }
-        if (current?.provider != request.provider || current.username != request.username.trim() ||
+        val connectionChanged = current?.provider != request.provider || current.username != request.username.trim() ||
             (request.provider == SchoolProvider.SCHULMANAGER && current.studentId != request.studentId) ||
-            (request.provider == SchoolProvider.ELTERNPORTAL && current.url.trimEnd('/') != request.url.orEmpty().trimEnd('/'))) {
+            (request.provider == SchoolProvider.ELTERNPORTAL && current.url.trimEnd('/') != request.url.orEmpty().trimEnd('/'))
+        if (connectionChanged) {
             settings.deleteById(key(childId, "last-sync"))
             settings.deleteById("elternportal.$childId.last-sync")
+            settings.deleteById(key(childId, "allow-receipt-downloads"))
+            settings.deleteById(key(childId, "share-connected-messages"))
         }
         put(childId, "provider", request.provider.name)
+        request.allowReceiptDownloads?.let { put(childId, "allow-receipt-downloads", it.toString()) }
+        request.shareConnectedMessages?.let { put(childId, "share-connected-messages", it.toString()) }
         return status(childId)
     }
 
@@ -110,6 +132,8 @@ class SchoolConnectionService(
         clearSchulmanager(childId)
         settings.deleteById(key(childId, "provider"))
         settings.deleteById(key(childId, "last-sync"))
+        settings.deleteById(key(childId, "allow-receipt-downloads"))
+        settings.deleteById(key(childId, "share-connected-messages"))
     }
 
     fun configuredKids() = kids.findAll().filter { credentials(it.id) != null }

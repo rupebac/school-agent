@@ -165,8 +165,13 @@
               <p class="muted">One school portal per child. Saving another provider replaces this child’s connection; imported letters remain available.</p>
               @if (portalProvider === 'ELTERNPORTAL') {
                 <label>{{ 'set.portal.url' | t }}
-                  <input type="url" [(ngModel)]="portalUrl" placeholder="https://school.eltern-portal.org" [disabled]="portal.busy()" />
+                  <input type="url" [(ngModel)]="portalUrl" (ngModelChange)="portalCredentialsChanged()" placeholder="https://school.eltern-portal.org" [disabled]="portal.busy()" />
                 </label>
+                <label class="check">
+                  <input type="checkbox" [(ngModel)]="portalAllowReceiptDownloads" [disabled]="portal.busy()" />
+                  {{ 'set.portal.receiptPermission' | t }}
+                </label>
+                <p class="muted">{{ 'set.portal.receiptExplanation' | t }}</p>
               }
               <label>{{ 'set.portal.user' | t }}
                 <input type="text" [(ngModel)]="portalUser" (ngModelChange)="portalCredentialsChanged()" autocomplete="off" [disabled]="portal.busy()" />
@@ -190,6 +195,11 @@
                 }
                 <p class="muted">Imports letters and attachments. Reading here does not confirm receipt or submit school forms.</p>
               }
+              <label class="check">
+                <input type="checkbox" [(ngModel)]="portalShareMessages" [disabled]="portal.busy()" />
+                {{ 'set.portal.shareMessages' | t }}
+              </label>
+              <p class="muted">{{ 'set.portal.shareMessagesHint' | t }}</p>
               <div class="actions">
                 <button type="button" [disabled]="!canSavePortal()" (click)="savePortal()">{{ 'common.save' | t }}</button>
                 <button type="button" class="ghost" [disabled]="portal.busy() || !portalMatchesSaved()" (click)="portal.test(settingsKidId())">{{ 'set.portal.test' | t }}</button>

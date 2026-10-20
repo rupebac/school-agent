@@ -23,15 +23,20 @@ class SchulmanagerConnector : SchoolConnector {
 
 /** Read-only protocol: no confirm, survey submission, model update or arbitrary API calls. */
 class SchulmanagerSession(
-    credentials: SchoolCredentials,
+    private val credentials: SchoolCredentials,
     private val baseUrl: String = BASE_URL,
     private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(),
 ) : SchoolSession {
     private val json = ObjectMapper()
+    private val sessionStarted = System.nanoTime()
     private var token: String? = null
     override val identity: SchoolIdentity
     private val institutionId: String
+    private val selfId: String?
     private var storageUrl: String? = null
+    private val messages = SchulmanagerMessages(::optionalCall)
+    // The public web client performs a separate letters/confirm call after fetching details.
+    override val canRefreshDocuments = true
 
     init {
         val salt = post("/api/get-salt", mapOf("emailOrUsername" to credentials.username, "mobileApp" to false))
@@ -44,6 +49,7 @@ class SchulmanagerSession(
             .takeIf { it.isNotBlank() }
             ?: throw SchoolConnectionException("Schulmanager login failed or needs another login step; check the account in Schulmanager")
         val user = login.path("user")
+        selfId = user.path("id").asText(null)
         institutionId = user.path("institutionId").asText()
         if (credentials.institutionId != null && credentials.institutionId != institutionId) {
             throw SchoolConnectionException("This account belongs to a different school; reconnect it in Settings")
@@ -90,8 +96,20 @@ class SchulmanagerSession(
         throw SchoolConnectionException("Schulmanager letter list exceeded the pagination limit")
     }
 
-    override fun documents(notice: SchoolNotice, studentId: String?): List<SchoolDocument> {
+    override fun noticeFeeds(studentId: String?): List<SchoolNoticeFeed> {
         requireStudent(studentId)
+        return super.noticeFeeds(studentId) + messages.read(identity, studentId!!, credentials.shareConnectedMessages, selfId) +
+            SchoolNoticeFeed(SchoolNoticeKind.NOTICEBOARD, SchoolFeedStatus.UNAVAILABLE,
+                message = "This provider exposes school notices through letters and messages")
+    }
+
+    override fun documents(notice: SchoolNotice, studentId: String?): List<SchoolDocument> {
+        return details(notice, studentId).documents
+    }
+
+    override fun details(notice: SchoolNotice, studentId: String?): SchoolNoticeDetails {
+        requireStudent(studentId)
+        if (notice.kind == SchoolNoticeKind.MESSAGE) return messages.details(notice, ::downloadAttachment)
         val detail = call("main", "poqa", mapOf(
             "action" to mapOf("model" to "modules/letters/letter", "action" to "findByPk", "parameters" to listOf(
                 notice.id.toLong(), mapOf("include" to listOf(
@@ -104,21 +122,56 @@ class SchulmanagerSession(
         if (!detail.isObject || detail.path("studentStatuses").none { it.path("studentId").asText() == studentId }) {
             throw SchoolConnectionException("Letter is not available for the selected child")
         }
-        val html = Jsoup.parseBodyFragment(detail.path("text").asText())
-        // Preserve paragraph boundaries for the existing reader/extraction; never include signed file URLs.
-        html.select("br").append("\\n")
-        html.select("p,div,li,h1,h2,h3").prepend("\\n")
         val text = buildString {
             appendLine(detail.path("title").asText(notice.title))
             appendLine("Sent: ${detail.path("sentDate").asText()}")
-            appendLine(html.text().replace("\\n", "\n").lines().joinToString("\n") { it.trim() }.trim())
+            appendLine(de.schoolagent.connectors.school.SchoolText.fromHtml(detail.path("text").asText()))
             detail.path("answerDeadline").takeIf { !it.isNull && !it.isMissingNode }?.let { appendLine("Response deadline: ${it.asText()}") }
             for (question in detail.path("questions")) {
                 appendLine("School response requested: ${Jsoup.parse(question.path("text").asText()).text()}")
+                appendLine("Response type: ${question.path("type").asText("Unknown")}")
+                val options = question.path("additionalData").path("options")
+                if (options.isObject) options.fields().asSequence().sortedBy { it.key }.forEach {
+                    if (it.value.isTextual) appendLine("Option ${it.key}: ${Jsoup.parse(it.value.asText()).text()}")
+                }
             }
         }
         val documents = mutableListOf(SchoolDocument("letter", notice.title, "text/plain", text.toByteArray(Charsets.UTF_8), sentAt = parseDate(detail.path("sentDate").asText())))
-        for (attachment in detail.path("attachments")) {
+        documents += detail.path("attachments").map(::downloadAttachment)
+        val status = detail.path("studentStatuses").single { it.path("studentId").asText() == studentId }
+        val questions = detail.path("questions")
+        val hasQuestions = questions.isArray && !questions.isEmpty
+        val read = status.hasNonNull("readTimestamp")
+        val deadlineText = detail.path("answerDeadline").asText(null)
+        val deadlineDay = deadlineText?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        val deadline = deadlineText?.let {
+            parseDate(it) ?: deadlineDay?.atStartOfDay(java.time.ZoneId.of("Europe/Berlin"))?.toInstant()
+                ?: throw SchoolConnectionException("Unrecognized response deadline")
+        }
+        val questionIds = questions.map { it.path("id").asText() }
+        require(questionIds.none { it.isBlank() } && questionIds.distinct().size == questionIds.size)
+        val answered = if (status.path("formData").isObject) questions.count {
+            status.path("formData").hasNonNull(it.path("id").asText())
+        } else 0
+        return SchoolNoticeDetails(documents, SchoolResponse(
+            receipt = if (!status.has("readTimestamp")) "UNKNOWN" else if (read) "ACKNOWLEDGED" else "PENDING",
+            response = when {
+                !questions.isArray -> "UNKNOWN"
+                !hasQuestions -> "NOT_REQUIRED"
+                read -> "SUBMITTED"
+                (deadlineDay?.isBefore(java.time.LocalDate.now(java.time.ZoneId.of("Europe/Berlin")))
+                    ?: deadline?.isBefore(Instant.now())) == true -> "CLOSED"
+                answered > 0 -> "PARTIAL"
+                else -> "PENDING"
+            },
+            deadline = deadline,
+            questionIds = questionIds,
+            answeredQuestions = if (hasQuestions) answered else null,
+            deadlineAllDay = deadlineDay != null,
+        ))
+    }
+
+    private fun downloadAttachment(attachment: JsonNode): SchoolDocument {
             // Inline images are real evidence too, especially when the letter is only a scanned image.
             val storedFile = attachment.path("file").asText()
             if (storedFile.isBlank()) throw SchoolConnectionException("A Schulmanager attachment is unavailable; retry the sync")
@@ -138,9 +191,7 @@ class SchulmanagerSession(
             if (mime == "application/pdf" && !bytes.take(5).toByteArray().contentEquals("%PDF-".toByteArray())) {
                 throw SchoolConnectionException("Schulmanager returned an invalid PDF")
             }
-            documents.add(SchoolDocument(attachment.path("id").asText(), attachment.path("filename").asText("Attachment"), mime, bytes))
-        }
-        return documents
+            return SchoolDocument(attachment.path("id").asText(), attachment.path("filename").asText("Attachment"), mime, bytes)
     }
 
     private fun requireStudent(studentId: String?) {
@@ -165,6 +216,7 @@ class SchulmanagerSession(
     }
 
     private fun post(path: String, payload: Any): JsonNode {
+        require(Duration.ofNanos(System.nanoTime() - sessionStarted) < Duration.ofMinutes(4)) { "School session request budget reached" }
         val request = HttpRequest.newBuilder(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(30))
             .header("Content-Type", "application/json").header("User-Agent", "SchoolAgent/0.1 (private family connector)")
             .apply { token?.let { header("Authorization", "Bearer $it") } }
@@ -175,11 +227,12 @@ class SchulmanagerSession(
     }
 
     private fun getBytes(url: String): ByteArray {
+        require(Duration.ofNanos(System.nanoTime() - sessionStarted) < Duration.ofMinutes(4)) { "School session request budget reached" }
         val response = http.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(45)).GET().build(), HttpResponse.BodyHandlers.ofInputStream())
         response.body().use { stream ->
             if (response.statusCode() != 200) throw SchoolConnectionException("Schulmanager attachment download failed (HTTP ${response.statusCode()})")
             val bytes = stream.readNBytes(MAX_ATTACHMENT_BYTES + 1)
-            if (bytes.size > MAX_ATTACHMENT_BYTES) throw SchoolConnectionException("Schulmanager attachment exceeds 25 MB")
+            if (bytes.size > MAX_ATTACHMENT_BYTES) throw SchoolConnectionException("Schulmanager attachment exceeds 8 MB")
             return bytes
         }
     }
@@ -190,7 +243,7 @@ class SchulmanagerSession(
         const val BASE_URL = "https://login.schulmanager-online.de"
         // API compatibility version from the live web client, verified September 2026.
         const val BUNDLE_VERSION = "fd1f308791"
-        const val MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+        const val MAX_ATTACHMENT_BYTES = de.schoolagent.documents.TextExtractor.MAX_INPUT_BYTES
         fun passwordHash(password: String, salt: String): String {
             val spec = PBEKeySpec(password.toCharArray(), salt.toByteArray(Charsets.UTF_8), 99999, 4096)
             return try { SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512").generateSecret(spec).encoded.joinToString("") { "%02x".format(it) } }

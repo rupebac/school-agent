@@ -17,12 +17,27 @@ data class SchoolCredentials(
     val password: String,
     val studentId: String? = null,
     val institutionId: String? = null,
+    val allowReceiptDownloads: Boolean = false,
+    val shareConnectedMessages: Boolean = false,
 )
 
 data class SchoolStudent(val id: String, val name: String, val className: String? = null)
 data class SchoolIdentity(val institutionId: String?, val schoolName: String?, val students: List<SchoolStudent>)
-data class SchoolNotice(val id: String, val title: String, val receivedAt: Instant?, val url: String?)
+enum class SchoolNoticeKind { LETTER, MESSAGE, NOTICEBOARD }
+data class SchoolNotice(val id: String, val title: String, val receivedAt: Instant?, val url: String?,
+                        val changeMarker: String? = null, val kind: SchoolNoticeKind = SchoolNoticeKind.LETTER)
+data class SchoolNoticeFeed(val kind: SchoolNoticeKind, val status: SchoolFeedStatus,
+                           val notices: List<SchoolNotice> = emptyList(), val message: String? = null)
 data class SchoolDocument(val id: String, val title: String, val mimeType: String, val bytes: ByteArray, val sentAt: Instant? = null)
+data class SchoolResponse(
+    val receipt: String = "UNKNOWN",
+    val response: String = "UNKNOWN",
+    val deadline: Instant? = null,
+    val questionIds: List<String> = emptyList(),
+    val answeredQuestions: Int? = null,
+    val deadlineAllDay: Boolean = false,
+)
+data class SchoolNoticeDetails(val documents: List<SchoolDocument>, val response: SchoolResponse? = null)
 
 interface SchoolSession : AutoCloseable {
     val identity: SchoolIdentity
@@ -30,7 +45,17 @@ interface SchoolSession : AutoCloseable {
     fun selectStudent(scope: SchoolStudentScope): SchoolStudent? = null
     fun records(scope: SchoolStudentScope, from: java.time.LocalDate, to: java.time.LocalDate): List<SchoolRecordFeed> = emptyList()
     fun notices(studentId: String?): List<SchoolNotice>
+    fun noticeFeeds(studentId: String?): List<SchoolNoticeFeed> = listOf(
+        try { SchoolNoticeFeed(SchoolNoticeKind.LETTER, SchoolFeedStatus.AVAILABLE, notices(studentId)) }
+        catch (_: Exception) { SchoolNoticeFeed(SchoolNoticeKind.LETTER, SchoolFeedStatus.FAILED,
+            message = "Could not read school letters; existing documents have been kept") })
     fun documents(notice: SchoolNotice, studentId: String?): List<SchoolDocument>
+    /** True only where the read path is separate from school receipt/answer mutations. */
+    val canRefreshDocuments: Boolean get() = false
+    val canAcquireDocuments: Boolean get() = true
+    fun canAcquire(notice: SchoolNotice) = notice.kind != SchoolNoticeKind.LETTER || canAcquireDocuments
+    fun canRefresh(notice: SchoolNotice) = notice.kind != SchoolNoticeKind.LETTER || canRefreshDocuments
+    fun details(notice: SchoolNotice, studentId: String?): SchoolNoticeDetails = SchoolNoticeDetails(documents(notice, studentId))
     override fun close() {}
 }
 

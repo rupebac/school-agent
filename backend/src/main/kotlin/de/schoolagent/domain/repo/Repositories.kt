@@ -40,6 +40,7 @@ interface ChildRepository : JpaRepository<Child, UUID> {
 }
 
 interface SchoolCaseRepository : JpaRepository<SchoolCase, UUID> {
+    fun findBySchoolNotificationPendingTrue(): List<SchoolCase>
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @org.springframework.data.jpa.repository.Query("select c from SchoolCase c where c.id = :id")
     fun lockById(@org.springframework.data.repository.query.Param("id") id: UUID): SchoolCase?
@@ -65,15 +66,28 @@ interface CaseChangeRepository : JpaRepository<CaseChange, UUID> {
 }
 
 interface SourceRepository : JpaRepository<Source, UUID> {
+    @org.springframework.data.jpa.repository.Query("select s from Source s where s.caseId in :caseIds and s.superseded = false")
     fun findByCaseIdIn(caseIds: Collection<UUID>): List<Source>
     fun findByDedupKey(dedupKey: String): Source?
     fun existsByDedupKey(dedupKey: String): Boolean
+    @org.springframework.data.jpa.repository.Query("select s from Source s where s.caseId = :caseId and s.superseded = false")
     fun findByCaseId(caseId: UUID): List<Source>
+    fun findAllByCaseId(caseId: UUID): List<Source>
+    fun findBySchoolItemKey(schoolItemKey: String): List<Source>
 }
 
 interface EvidenceRepository : JpaRepository<Evidence, UUID> {
     fun existsByDedupKey(dedupKey: String): Boolean
+    @org.springframework.data.jpa.repository.Query("select e from Evidence e, Source s where e.caseId = :caseId and e.sourceId = s.id and s.superseded = false")
     fun findByCaseId(caseId: UUID): List<Evidence>
+    fun findAllByCaseId(caseId: UUID): List<Evidence>
+}
+
+interface SchoolItemRepository : JpaRepository<de.schoolagent.domain.model.SchoolItem, String> {
+    fun findByChildId(childId: UUID): List<de.schoolagent.domain.model.SchoolItem>
+}
+interface SchoolItemRevisionRepository : JpaRepository<de.schoolagent.domain.model.SchoolItemRevision, UUID> {
+    fun findByItemKeyOrderByVersionDesc(itemKey: String): List<de.schoolagent.domain.model.SchoolItemRevision>
 }
 
 interface InvestigationRepository : JpaRepository<Investigation, UUID> {
@@ -227,6 +241,8 @@ interface InboxCopyRepository : JpaRepository<de.schoolagent.domain.model.Stored
 interface WhatsappReceiptRepository : JpaRepository<de.schoolagent.domain.model.WhatsappReceipt, String>
 
 interface SchoolRecordRepository : JpaRepository<de.schoolagent.domain.model.StoredSchoolRecord, String> {
+    @org.springframework.data.jpa.repository.Query("select r from StoredSchoolRecord r, Source s where r.sourceId = s.id and s.caseId = :caseId and s.superseded = false")
+    fun findCurrentByCaseId(caseId: UUID): List<de.schoolagent.domain.model.StoredSchoolRecord>
     fun findTop100ByNotificationPendingTrueOrProjectionPendingTrueOrderByUpdatedAtAsc(): List<de.schoolagent.domain.model.StoredSchoolRecord>
     fun findByChildIdAndKindAndActiveTrue(childId: UUID, kind: de.schoolagent.connectors.school.SchoolRecordKind): List<de.schoolagent.domain.model.StoredSchoolRecord>
     fun findByNamespaceAndKindAndActiveTrue(namespace: String, kind: de.schoolagent.connectors.school.SchoolRecordKind): List<de.schoolagent.domain.model.StoredSchoolRecord>

@@ -79,10 +79,12 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
         if (queued.childId != null && user.role != "ADMIN" && user.kids.none { it.id.toString() == queued.childId }) return false
         if (row.caseId != null) {
             val c = cases.findById(row.caseId!!).orElse(null) ?: return false
-            if (relevance?.isArchived(c) == true) return false
-            return user.instantEnabled && c.importanceScore >= 2 && !c.isClosed() && !c.muted &&
+            val revision = inbox.revision(c.id)
+            val schoolChange = row.dedupKey.startsWith("school-change:${c.id}:$revision:")
+            if (!schoolChange && relevance?.isArchived(c) == true) return false
+            return user.instantEnabled && c.importanceScore >= 2 && !c.muted && !c.schoolUpdatePending &&
                 (user.role == "ADMIN" || c.childId == null || user.kids.any { it.id == c.childId }) &&
-                row.dedupKey.startsWith("decision:${c.id}:${inbox.revision(c.id)}:${c.isInfo()}:")
+                (schoolChange || (!c.isClosed() && row.dedupKey.startsWith("decision:${c.id}:$revision:${c.isInfo()}:")))
         }
         return if (row.dedupKey.startsWith("weekly:")) user.weeklyEnabled else user.briefingEnabled
     }

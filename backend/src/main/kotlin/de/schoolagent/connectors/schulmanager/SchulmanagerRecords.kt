@@ -79,24 +79,11 @@ internal class SchulmanagerRecords(private val call: (String, String, Any) -> Js
             } catch (e: Exception) { feeds += incidentKinds.map { failed(it, e) } }
         }
         feeds += section(SchoolRecordKind.PAYMENT, "invoicing" in active) {
-            // This widget endpoint is an incomplete list; absence never marks a payment completed.
-            val data = call("main", "get-unpaid-invoices-for-widget", emptyMap<String, Any>())
-                ?: return@section unavailable(SchoolRecordKind.PAYMENT)
-            require(data.isArray) { "Unexpected Schulmanager payment list" }
-            val records = data.filter { row ->
-                require(row.hasNonNull("studentId")) { "Payment student missing" }
-                row.path("studentId").asText() == studentId
-            }.map { row ->
-                val invoice = row.path("generalInvoice")
-                val title = invoice.path("title").asText().ifBlank { invoice.path("name").asText("School payment") }
-                val due = invoice.path("dueDate").takeIf { it.isTextual && it.asText().isNotBlank() }?.let { LocalDate.parse(it.asText().take(10)) }
-                val text = listOf(title, plain(invoice.path("description").asText()), "Requested amount: ${row.path("sum").asText()} EUR",
-                    "Already paid: ${row.path("paidSum").asText()} EUR", due?.let { "Payment deadline: $it" }.orEmpty()).filter(String::isNotBlank).joinToString("\n")
-                SchoolRecord(id(row), SchoolRecordKind.PAYMENT, title, text, dueDate = due,
-                    url = "${SchulmanagerSession.BASE_URL}/#/modules/invoicing")
-            }
-            SchoolRecordFeed(SchoolRecordKind.PAYMENT, SchoolFeedStatus.AVAILABLE, records)
+            SchulmanagerPayments(call).read(studentId)
         }
+        val learning = SchulmanagerLearningFeeds(call)
+        feeds += section(SchoolRecordKind.HOMEWORK, "classbook" in active) { learning.homework(studentId) }
+        feeds += section(SchoolRecordKind.TIMETABLE_CHANGE, "schedules" in active) { learning.timetable(studentId, from) }
         return feeds
     }
 

@@ -13,8 +13,10 @@ cancellations remain eligible without modifying family task completion. Timetabl
 change notices stay in the inbox/WhatsApp, not calendar appointment lists. V35 queues
 removal of existing app-owned timetable projections through the normal retry worker;
 actual events keep their existing Google IDs. Validation: 488 backend tests, 89 frontend
-tests, production frontend build and privacy/secret scans pass. Deployment verification
-is pending.
+tests, production frontend build and privacy/secret scans pass. Deployed with V35;
+health, migration checksums, app-owned notice removal and preservation of other Google
+IDs are verified. Stale queued alerts were skipped before normal delivery resumed.
+Both GitHub workflows pass for the deployed code.
 
 Portal reconciliation is implemented with additive migration V34:
 both providers share complete document manifests, immutable source history,
@@ -177,7 +179,8 @@ notification preferences, email ingestion, document reading and a filtered calen
 - Populated school payment/report layouts need verification against authorized live
   records; empty feeds and denial responses do not prove compatibility with all layouts.
 - Live Google insert/backfill behavior is verified with an authorized connected calendar.
-  Live update/delete behavior still needs verification; retry paths, child isolation,
+  Live deletion of app-owned notices is verified; live appointment updates still need
+  verification. Retry paths, child isolation,
   duplicate prevention and report exclusions are covered by automated tests.
 - Cross-source exam matching needs reliable identity; do not merge exams by date alone.
 - Parentheses or school reference codes must not become invented teacher/track meanings.

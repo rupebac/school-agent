@@ -26,9 +26,14 @@ The shared reconciliation release and V34 were deployed on 2026-10-20 with backu
 rollback images, health, migration and log-rotation verification. Live verification
 identified adapter compatibility fixes now covered by regressions: the Schulmanager
 parent reading endpoint, string Messenger subscription IDs, and larger PDF originals.
-The compatibility release restored letter reads and Messenger imports. Follow-up
-regressions also cover persistence of dated school responses and scanned noticeboard
-attachments; these last fixes are awaiting deployment verification.
+All compatibility fixes were deployed and verified on 2026-10-20. Live checks pass
+for letters, noticeboard documents/images, classbook homework and substitutions in
+Elternportal, and letters and Messenger in Schulmanager. Dated school responses now
+persist correctly. Schulmanager's homework endpoint still returns a provider HTTP
+500; the independent feed reports failure and preserves existing data. Historical
+content checks continue through the bounded refresh queue. Public health, release
+images, frontend assets, migrations, recovery backup and log rotation are verified;
+both GitHub workflows pass for the deployed code.
 
 The recovery CI fixture waits for PostgreSQL's final TCP server instead of the
 temporary initialization socket. A delayed initialization fixture reproduces the old

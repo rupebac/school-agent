@@ -39,7 +39,7 @@ class SchoolCalendarImportJob(
         for (y in listOf(year, year + 1)) {
             runCatching { calendar.importBavarian(y) }
                 .onSuccess { log.info("school calendar import {} ({}): +{} new, {} already there", y, reason, it.imported, it.alreadyPresent) }
-                .onFailure { log.warn("school calendar import {} failed: {}", y, it.message) }
+                .onFailure { log.warn("school calendar import {} failed: {}", y, it.javaClass.simpleName) }
         }
     }
 }

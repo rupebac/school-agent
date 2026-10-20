@@ -3,6 +3,7 @@ package de.schoolagent.ingestion
 import de.schoolagent.common.DedupKeys
 import de.schoolagent.connectors.school.*
 import de.schoolagent.documents.DocumentStore
+import de.schoolagent.diagnostics.*
 import de.schoolagent.domain.enums.*
 import de.schoolagent.domain.model.Source
 import de.schoolagent.domain.repo.ChildRepository
@@ -33,6 +34,7 @@ class SchoolIngestionService(
     private val transactions: TransactionTemplate,
     private val clock: Clock,
     private val nativeRecords: SchoolRecordIngestionService? = null,
+    private val diagnostics: IntegrationDiagnostics? = null,
 ) {
     private val connectors = connectors.associateBy { it.provider }
     private val locks = ConcurrentHashMap<String, Any>()
@@ -51,7 +53,12 @@ class SchoolIngestionService(
     }
 
     fun syncOnce(childId: UUID): SyncResult {
-        val original = config.credentials(childId) ?: throw SchoolConnectionException("School portal not configured")
+        val run = UUID.randomUUID()
+        val original = config.credentials(childId) ?: run {
+            diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_SYNC, DiagnosticOutcome.NOT_CONFIGURED, run, childId))
+            throw SchoolConnectionException("School portal not configured")
+        }
+        diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_SYNC, DiagnosticOutcome.STARTED, run, childId, provider = original.provider))
         return withAccount(original) {
             try {
                 connector(original).connect(original).use { session ->
@@ -87,7 +94,7 @@ class SchoolIngestionService(
                             }
                         } catch (e: Exception) {
                             lettersFailed++
-                            log.warn("School import failed for child {} notice {} ({})", childId, notice.id, e.javaClass.simpleName)
+                            log.warn("School letter import failed run={} errorType={}", run, e.javaClass.simpleName)
                         }
                     }
                     // Letters establish connection health and their own initial-import boundary.
@@ -103,24 +110,33 @@ class SchoolIngestionService(
                     val today = clock.instant().atZone(java.time.ZoneId.of("Europe/Berlin")).toLocalDate()
                     val to = today.plusMonths(18)
                     var feeds = try { session.records(scope, today, to) } catch (e: Exception) {
-                        log.warn("Optional school sections failed for child {} ({})", childId, e.javaClass.simpleName)
+                        log.warn("Optional school sections failed run={} errorType={}", run, e.javaClass.simpleName)
                         SchoolRecordKind.entries.map { SchoolRecordFeed.failed(it) }
                     }
-                    val nativeResult = try { nativeRecords?.sync(childId, credentials, scope, feeds, today, to, initialImport) }
+                    val nativeResult = try { nativeRecords?.sync(childId, credentials, scope, feeds, today, to, initialImport, run) }
                     catch (e: Exception) {
-                        log.warn("Optional school record import failed for child {} ({})", childId, e.javaClass.simpleName)
+                        log.warn("Optional school record import failed run={} errorType={}", run, e.javaClass.simpleName)
                         feeds = feeds.map { if (it.status == SchoolFeedStatus.AVAILABLE) it.copy(status = SchoolFeedStatus.FAILED, complete = false,
                             message = "Record import failed; existing data has been kept and this section will retry") else it }
                         null
                     }
                     feeds = nativeResult?.feeds ?: feeds
+                    feeds.forEach { feed -> diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_FEED,
+                        when (feed.status) { SchoolFeedStatus.AVAILABLE -> DiagnosticOutcome.AVAILABLE
+                            SchoolFeedStatus.UNAVAILABLE -> DiagnosticOutcome.UNAVAILABLE; SchoolFeedStatus.FAILED -> DiagnosticOutcome.FAILED },
+                        run, childId, provider = credentials.provider, kind = feed.kind, count = feed.records.size, complete = feed.complete)) }
                     transactions.executeWithoutResult {
                         kids.lockById(childId) ?: throw SchoolConnectionException("Child no longer exists")
                         if (config.credentials(childId) == credentials) config.recordSections(childId, feeds)
                     }
-                    SyncResult(notices.size, ingested, lettersFailed + feeds.count { it.status == SchoolFeedStatus.FAILED }, nativeResult?.seen ?: 0, nativeResult?.changed ?: 0)
+                    SyncResult(notices.size, ingested, lettersFailed + feeds.count { it.status == SchoolFeedStatus.FAILED }, nativeResult?.seen ?: 0, nativeResult?.changed ?: 0).also {
+                        diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_SYNC, DiagnosticOutcome.COMPLETED, run, childId,
+                            provider = credentials.provider, count = it.recordsSeen, changed = it.recordsChanged, failed = it.failed))
+                    }
                 }
             } catch (e: Exception) {
+                diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_SYNC, DiagnosticOutcome.FAILED, run, childId, provider = original.provider))
+                log.warn("School sync failed run={} errorType={}", run, e.javaClass.simpleName)
                 health.failure(original.provider.healthType, "School connection failed; test it in Settings")
                 throw e
             }

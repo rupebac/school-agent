@@ -187,18 +187,14 @@ class WhatsappAdminController(
 /**
  * Meta-style webhook (works for any compatible provider): GET verifies the
  * subscription via the shared verify token; POST receives inbound messages,
- * optionally HMAC-verified with X-Hub-Signature-256 when an app secret is set.
+ * verified with X-Hub-Signature-256 and durably queued before acknowledgment.
  */
 @RestController
 @RequestMapping("/api/whatsapp/webhook")
 class WhatsappWebhookController(
     private val config: WhatsAppConfigService,
-    private val qa: QuestionAnsweringService,
-    private val client: WhatsappClient,
-    private val graph: GraphWhatsappClient,
-    private val photos: de.schoolagent.ingestion.PhotoIngestionService,
-    private val health: de.schoolagent.health.HealthTracker,
     private val outbox: WhatsappOutbox,
+    private val inbox: WhatsappInbox,
 ) {
 
     private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
@@ -222,10 +218,8 @@ class WhatsappWebhookController(
         @RequestHeader(value = "X-Hub-Signature-256", required = false) signature: String?,
     ): ResponseEntity<String> {
         val secrets = config.appSecrets()
-        if (secrets.isNotEmpty()) {
-            if (signature == null || secrets.none { hmacMatches(it, payload, signature) }) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("bad signature")
-            }
+        if (secrets.isEmpty() || signature == null || secrets.none { hmacMatches(it, payload, signature) }) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("bad signature")
         }
         try {
             config.recordWebhook()
@@ -233,75 +227,13 @@ class WhatsappWebhookController(
             for (entry in root.path("entry")) for (change in entry.path("changes")) {
                 val value = change.path("value")
                 for (status in value.path("statuses")) outbox.record(status)
-                for (message in value.path("messages")) runCatching { handleMessage(value, message) }
-                    .onFailure { log.warn("whatsapp reply failed: {}", it.message?.take(200)) }
+                for (message in value.path("messages")) inbox.enqueue(value, message)
             }
         } catch (e: Exception) {
-            log.warn("whatsapp inbound failed: {}", e.message)
+            log.warn("whatsapp inbound failed: {}", e.javaClass.simpleName)
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("retry")
         }
         return ResponseEntity.ok("ok")
-    }
-
-    private fun handleMessage(value: com.fasterxml.jackson.databind.JsonNode, message: com.fasterxml.jackson.databind.JsonNode) {
-            val from = message.path("from").asText(null)
-            val type = message.path("type").asText("")
-            val text = message.path("text").path("body").asText(null)
-            val phoneNumberId = value.path("metadata").path("phone_number_id").asText(null)
-            val childId = config.childIdForPhoneNumberId(phoneNumberId)
-            log.info(
-                "whatsapp inbound from={} type={} textLen={} phoneNumberId={} childId={}",
-                from,
-                type,
-                text?.length ?: 0,
-                phoneNumberId,
-                childId,
-            )
-            if (from == null) return
-
-            config.withChild(childId) {
-                val user = config.userForNumber(from)
-                if (user == null) {
-                    log.info("whatsapp unknown sender {}", from)
-                    runCatching {
-                        client.sendText(from, de.schoolagent.i18n.WaCopy.unknownSender(de.schoolagent.i18n.UserLanguage.EN))
-                    }
-                    return@withChild
-                }
-                val lang = de.schoolagent.i18n.UserLanguage.of(user.language)
-                val reply = when {
-                    type == "image" || type == "document" -> ingestMedia(message, type, user, lang)
-                    !text.isNullOrBlank() ->
-                        runCatching {
-                            qa.answerAndRemember(text, user).forWhatsApp(config.config().frontendUrl)
-                        }
-                            .getOrDefault(de.schoolagent.i18n.WaCopy.chatInvite(lang))
-                    else -> return@withChild
-                }
-                client.sendText(from, reply)
-            }
-    }
-
-    private fun ingestMedia(
-        message: com.fasterxml.jackson.databind.JsonNode,
-        type: String,
-        user: de.schoolagent.domain.model.AppUser,
-        lang: de.schoolagent.i18n.UserLanguage,
-    ): String {
-        val node = message.path(type)
-        val mediaId = node.path("id").asText(null)?.takeIf { it.isNotBlank() }
-            ?: return de.schoolagent.i18n.WaCopy.photoFailed(lang)
-        val caption = node.path("caption").asText(null)
-        val filename = node.path("filename").asText(null)
-        return try {
-            val (bytes, mime) = graph.downloadMedia(mediaId)
-            val ingested = photos.ingest(bytes, mime, filename, caption, user, childId = null)
-            if (!ingested.duplicate) photos.processAsync(ingested.schoolCase.id)
-            de.schoolagent.i18n.WaCopy.photoReceived(lang, ingested.schoolCase.title, ingested.duplicate)
-        } catch (e: Exception) {
-            log.warn("whatsapp photo ingest failed: {}", e.message)
-            de.schoolagent.i18n.WaCopy.photoFailed(lang)
-        }
     }
 
     private fun hmacMatches(secret: String, payload: String, signature: String): Boolean {
@@ -309,6 +241,7 @@ class WhatsappWebhookController(
         mac.init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
         val expected = mac.doFinal(payload.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
-        return signature == "sha256=$expected"
+        return java.security.MessageDigest.isEqual(
+            signature.toByteArray(Charsets.UTF_8), "sha256=$expected".toByteArray(Charsets.UTF_8))
     }
 }

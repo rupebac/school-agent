@@ -40,6 +40,21 @@ class RequirementServiceTest {
         service = RequirementService(requirementRepo, caseRepo, changeRepo, auditRepo, clock)
     }
 
+    @Test fun `completion is audited once and cancelled requirements cannot complete`() {
+        val c = SchoolCase(title = "Gym")
+        val requirement = ChildRequirement(caseId = c.id, description = "Indoor shoes", dedupKey = "synthetic")
+        every { requirementRepo.lockById(requirement.id) } returns requirement
+        every { caseRepo.lockById(c.id) } returns c
+        service.complete(requirement.id, Actor.MANUAL)
+        service.complete(requirement.id, Actor.MANUAL)
+        assertThat(requirement.status).isEqualTo(RequirementStatus.DONE)
+        verify(exactly = 1) { auditRepo.save(match { it.action == "REQUIREMENT_COMPLETED" }) }
+        verify(exactly = 1) { changeRepo.save(match { it.beforeJson?.contains("OPEN") == true && it.afterJson?.contains("DONE") == true }) }
+        requirement.status = RequirementStatus.CANCELLED
+        org.assertj.core.api.Assertions.assertThatThrownBy { service.complete(requirement.id, Actor.MANUAL) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
     @Test
     fun `manual create records the kit item`() {
         val c = SchoolCase(title = "Gym")

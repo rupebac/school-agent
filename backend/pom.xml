@@ -19,6 +19,10 @@
 
   <properties>
     <java.version>21</java.version>
+    <!-- Security patches newer than the framework's managed baseline. -->
+    <tomcat.version>11.0.26</tomcat.version>
+    <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+    <jackson-bom.version>3.1.7</jackson-bom.version>
     <kotlin.version>2.3.21</kotlin.version>
     <mockk.version>1.14.11</mockk.version>
     <angus-mail.version>2.0.5</angus-mail.version>
@@ -62,6 +66,12 @@
       <artifactId>jackson-module-kotlin</artifactId>
     </dependency>
 
+    <!-- Spring MVC uses Jackson 3; retain Jackson 2 above for explicit internal mappers. -->
+    <dependency>
+      <groupId>tools.jackson.module</groupId>
+      <artifactId>jackson-module-kotlin</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-core</artifactId>
@@ -80,6 +90,11 @@
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
     </dependency>
 
     <!-- Investigation pipeline (M3): MIME parsing, HTML text/links, PDF text -->

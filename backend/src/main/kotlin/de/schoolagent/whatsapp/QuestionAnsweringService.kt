@@ -307,7 +307,7 @@ class QuestionAnsweringService(
             }
             withRefs(text, matters, modelIds)
         } catch (e: Exception) {
-            log.debug("Q&A model call failed: {}", e.message)
+            log.debug("Q&A model call failed: {}", e.javaClass.simpleName)
             null
         }
     }

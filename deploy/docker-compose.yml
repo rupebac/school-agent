@@ -2,8 +2,16 @@
 #
 # Copy env.example to .env and fill in real values. NEVER commit .env.
 
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "5m"
+    max-file: "3"
+    compress: "true"
+
 services:
   postgres:
+    logging: *bounded-logging
     image: postgres:17
     restart: unless-stopped
     environment:
@@ -22,12 +30,27 @@ services:
 
   # Read-only browser investigation worker (M7). Internal network only.
   playwright-worker:
+    logging: *bounded-logging
     build: ../playwright-worker
+    profiles: [browser]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp_profile.json
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    shm_size: 256mb
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
     ports:
       - "127.0.0.1:8100:8100"
     restart: unless-stopped
 
   school-api:
+    logging: *bounded-logging
     build: ../backend
     depends_on:
       postgres:
@@ -42,6 +65,7 @@ services:
       SCHOOLAGENT_GOOGLE_CLIENT_SECRET: ${SCHOOLAGENT_GOOGLE_CLIENT_SECRET:-}
       SCHOOLAGENT_GOOGLE_REDIRECT_URI: ${SCHOOLAGENT_GOOGLE_REDIRECT_URI:-${SCHOOLAGENT_PUBLIC_URL}/api/google/callback}
       SCHOOLAGENT_GOOGLE_SUCCESS_REDIRECT: ${SCHOOLAGENT_GOOGLE_SUCCESS_REDIRECT:-${SCHOOLAGENT_PUBLIC_URL}/settings}
+      SCHOOLAGENT_BROWSER_WORKER_URL: ${SCHOOLAGENT_BROWSER_WORKER_URL:-}
       SCHOOLAGENT_GMAIL_POLLING: ${SCHOOLAGENT_GMAIL_POLLING:-false}
       SCHOOLAGENT_GMAIL_QUERY: ${SCHOOLAGENT_GMAIL_QUERY:-in:inbox}
       SCHOOLAGENT_AI_API_KEY: ${SCHOOLAGENT_AI_API_KEY:-}
@@ -55,6 +79,7 @@ services:
     restart: unless-stopped
 
   school-web:
+    logging: *bounded-logging
     build: ../frontend
     depends_on:
       - school-api

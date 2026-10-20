@@ -323,10 +323,10 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
                 })
             }
         } catch (e: AiUnavailableException) {
-            log.info("reasoning model unavailable ({}), using deterministic fallback", e.message)
+            log.info("reasoning model unavailable ({}), using deterministic fallback", e.javaClass.simpleName)
             normalizeDecision(deterministicFallback(evidence))
         } catch (e: Exception) {
-            log.warn("reasoning model failed ({}), using deterministic fallback", e.message)
+            log.warn("reasoning model failed ({}), using deterministic fallback", e.javaClass.simpleName)
             normalizeDecision(deterministicFallback(evidence))
         }
 
@@ -382,7 +382,8 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
             }
             val key = DedupKeys.event(caseId, e.type, e.title)
             val existing = knownEvents.find {
-                it.eventType == e.type && it.startTime.atZone(berlin).toLocalDate() == e.date
+                it.eventType == e.type && it.startTime.atZone(berlin).toLocalDate() == e.date &&
+                    TitleSimilarity.similar(it.title, e.title)
             } ?: eventRepo.findByDedupKey(key)
                 ?: eventRepo.findByDedupKey(DedupKeys.event(caseId, EventType.SCHOOL_EVENT, e.title))
             if (existing != null) {
@@ -401,6 +402,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
                             createdAt = clock.instant(),
                         ),
                     )
+                    existing.googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.PENDING
                     existing.startTime = newStart
                     existing.allDay = e.allDay
                     existing.eventType = e.type
@@ -459,7 +461,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
 
         // WhatsApp: score < 2 is stored, not pinged
         runCatching { notifications.notifyDecision(schoolCase) }
-            .onFailure { log.warn("notification dispatch failed for case {}: {}", caseId, it.message) }
+            .onFailure { log.warn("notification dispatch failed for case {}: {}", caseId, it.javaClass.simpleName) }
 
         return ReasonResult(parsed.relevance, parsed.importance.name, actionCount, eventCount, parsed.ai)
     }
@@ -477,7 +479,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
                     else { reason(c.id); true }
                 } == true
             }.onSuccess { if (it) reasoned++ }
-                .onFailure { log.warn("reason failed for case {}: {}", c.id, it.message) }
+                .onFailure { log.warn("reason failed for case {}: {}", c.id, it.javaClass.simpleName) }
         }
         return reasoned
     }
@@ -513,7 +515,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
             runCatching {
                 caseService.transition(c, CaseStatus.INVESTIGATING, Actor.SYSTEM, "re-reason with AI model")
                 caseService.transition(c, CaseStatus.READY_FOR_REASONING, Actor.SYSTEM, "re-reason with AI model")
-            }.onFailure { log.warn("could not reopen case {} for re-reasoning: {}", c.id, it.message) }
+            }.onFailure { log.warn("could not reopen case {} for re-reasoning: {}", c.id, it.javaClass.simpleName) }
         }
         return reasonAllPending()
     }
@@ -685,7 +687,7 @@ CORRECTIONS/UPDATES: if this is a follow-up to one listed existing case
             if (e.type == EventType.DEADLINE || e.type == EventType.PAYMENT) {
                 if (actions.any { it.dueAt == e.date }) continue
             }
-            if (events.any { it.type == e.type && it.date == e.date }) continue
+            if (events.any { it.type == e.type && it.date == e.date && it.time == e.time && TitleSimilarity.similar(it.title, e.title) }) continue
             events.add(e)
         }
         return parsed.copy(actions = actions, events = events)

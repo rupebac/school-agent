@@ -200,7 +200,7 @@ class RestChatHttpClient(private val rest: org.springframework.web.client.RestTe
             )!!
             com.fasterxml.jackson.databind.ObjectMapper().readTree(raw)
         } catch (e: org.springframework.web.client.RestClientException) {
-            throw AiUnavailableException("AI provider unreachable: ${e.message}")
+            throw AiUnavailableException("AI provider request failed (${e.javaClass.simpleName})")
         }
     }
 }

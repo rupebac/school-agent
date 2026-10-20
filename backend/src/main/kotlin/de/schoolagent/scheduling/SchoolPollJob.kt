@@ -24,9 +24,9 @@ class SchoolPollJob(
         for (kid in config.configuredKids()) {
             try {
                 val result = ingestion.syncAndProcess(kid.id)
-                log.info("school portal poll [{}]: {}", kid.name, result)
+                log.info("school portal poll: {}", result)
             } catch (e: Exception) {
-                log.warn("school portal poll [{}] failed: {}", kid.name, e.message)
+                log.warn("school portal poll failed: {}", e.javaClass.simpleName)
             }
         }
     }

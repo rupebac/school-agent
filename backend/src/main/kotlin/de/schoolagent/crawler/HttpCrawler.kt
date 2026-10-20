@@ -2,10 +2,6 @@ package de.schoolagent.crawler
 
 import org.springframework.stereotype.Service
 import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.time.Duration
 
 data class FetchedPage(
     val requestedUrl: String,
@@ -21,38 +17,15 @@ interface HttpCrawler {
     fun fetch(url: String): FetchedPage
 }
 
-class CrawlException(message: String) : RuntimeException(message)
+open class CrawlException(message: String) : RuntimeException(message)
 
 @Service
 class JdkHttpCrawler : HttpCrawler {
 
-    private val client: HttpClient = HttpClient.newBuilder()
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .connectTimeout(Duration.ofSeconds(10))
-        .build()
-
     override fun fetch(url: String): FetchedPage {
-        val uri = runCatching { URI.create(url) }.getOrElse { throw CrawlException("invalid url: $url") }
-        if (uri.scheme !in listOf("http", "https")) throw CrawlException("scheme not allowed: ${uri.scheme}")
-
-        val request = HttpRequest.newBuilder(uri)
-            .timeout(Duration.ofSeconds(15))
-            .header("User-Agent", "SchoolAgent/0.1 (family private agent)")
-            .GET()
-            .build()
-        val response: HttpResponse<ByteArray> = try {
-            client.send(request, HttpResponse.BodyHandlers.ofByteArray())
-        } catch (e: Exception) {
-            throw CrawlException("fetch failed: ${e.message}")
-        }
-        if (response.statusCode() >= 400) throw CrawlException("HTTP ${response.statusCode()} for $url")
-        if (response.body().size > MAX_BYTES) throw CrawlException("too large: ${response.body().size} bytes")
-        return FetchedPage(
-            requestedUrl = url,
-            finalUrl = response.uri().toString(),
-            contentType = response.headers().firstValue("content-type").orElse(null),
-            bytes = response.body(),
-        )
+        val response = PublicHttpSession().request(url, maxBytes = MAX_BYTES)
+        if (response.status !in 200..299) throw CrawlException("HTTP ${response.status}")
+        return FetchedPage(url, response.uri.toString(), response.contentType, response.bytes)
     }
 
     companion object {
@@ -86,7 +59,10 @@ object Links {
             ?.joinToString("&")
             ?.takeIf { it.isNotBlank() }
         return runCatching {
-            URI(uri.scheme, uri.userInfo, uri.host, uri.port, uri.path ?: "/", query, null).toString()
+            // Keep raw path/query escapes intact: re-encoding % breaks signed/form links.
+            if (uri.host == null || uri.userInfo != null) return null
+            "${uri.scheme}://${uri.rawAuthority}${uri.rawPath.ifEmpty { "/" }}" +
+                (query?.let { "?$it" } ?: "")
         }.getOrNull()
     }
 

@@ -100,9 +100,11 @@ class WhatsAppConfigService(
         accounts().mapNotNull { u -> u.whatsappNumber?.let { u to it } }
 
     fun userForNumber(from: String): de.schoolagent.domain.model.AppUser? {
-        val digits = from.filter { it.isDigit() }.takeLast(9)
-        return users.findAll().firstOrNull {
-            it.whatsappNumber?.filter { c -> c.isDigit() }?.takeLast(9) == digits
+        val digits = from.filter { it in '0'..'9' }
+        if (digits.length !in 7..15) return null
+        // The complete international number is the identity; a shared suffix is not.
+        return users.findAll().singleOrNull {
+            it.whatsappNumber?.filter { c -> c in '0'..'9' } == digits
         }
     }
 

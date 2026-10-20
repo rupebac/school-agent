@@ -78,6 +78,8 @@ class CasesApiTest {
     @Autowired lateinit var histories: de.schoolagent.domain.repo.CaseStatusEntryRepository
     @Autowired lateinit var transactions: org.springframework.transaction.support.TransactionTemplate
     @Autowired lateinit var clock: java.time.Clock
+    @Autowired lateinit var diagnostics: de.schoolagent.diagnostics.IntegrationDiagnostics
+    @Autowired lateinit var auditEntries: de.schoolagent.domain.repo.AuditEntryRepository
 
     @Test fun `native exams persist once update in place preserve done and only complete snapshots withdraw dates`() {
         val kid = kidRepo.save(de.schoolagent.domain.model.Child(name = "Jamie", className = "7C"))
@@ -132,7 +134,7 @@ class CasesApiTest {
         assertThat(events.findByCaseId(c.id).single().status).isEqualTo(de.schoolagent.domain.enums.EventStatus.CANCELLED)
     }
 
-    private inner class NativeFixture {
+    private inner class NativeFixture(diagnostics: de.schoolagent.diagnostics.IntegrationDiagnostics? = null) {
         val kid = kidRepo.save(de.schoolagent.domain.model.Child(name = "Jamie", className = "7C"))
         val credentials = SchoolCredentials(SchoolProvider.SCHULMANAGER, "https://school.example", "parent", "password", "77", "88")
         val config = mockk<SchoolConnectionService>(relaxed = true)
@@ -160,7 +162,7 @@ class CasesApiTest {
             }
             every { oauth.isConfigured(any()) } returns false
             service = SchoolRecordIngestionService(nativeRecords, sourceRepo, caseRepo, events, actionRepo, changes,
-                caseService, kidRepo, config, documents, interpreter, notify, calendar, oauth, transactions, fixedClock)
+                caseService, kidRepo, config, documents, interpreter, notify, calendar, oauth, transactions, fixedClock, diagnostics)
         }
         fun scope() = SchoolStudentScope(kid.name, kid.className, "77")
         fun sync(vararg feeds: SchoolRecordFeed) = service.sync(kid.id, credentials, scope(), feeds.toList(), today, today.plusYears(1), false)
@@ -168,6 +170,53 @@ class CasesApiTest {
             SchoolRecord(id, kind, "Mathematics", "School record", date, url = "https://school.example/records")
         fun stored(kind: SchoolRecordKind) = nativeRecords.findByNamespaceAndKindAndActiveTrue(service.namespace(kid.id, credentials, scope()), kind).single()
         fun feed(vararg rows: SchoolRecord, complete: Boolean = false) = SchoolRecordFeed(rows.first().kind, SchoolFeedStatus.AVAILABLE, rows.toList(), complete)
+    }
+
+    @Test fun `diagnostics preserve observed past exams without importing them or changing quiet baselines`() {
+        val f = NativeFixture(diagnostics)
+        val run = UUID.randomUUID()
+        val past = f.row(id = "past", date = f.today.minusDays(1))
+        val future = f.row(id = "future")
+        val result = f.service.sync(f.kid.id, f.credentials, f.scope(), listOf(f.feed(past, future, complete = true)),
+            f.today, f.today.plusYears(1), false, run)
+        val entries = auditEntries.findAll().filter { it.detail?.contains(run.toString()) == true }
+        val snapshot = json.readTree(entries.single { it.action == "DIAGNOSTIC_SCHOOL_SNAPSHOT" }.detail)
+        assertThat(snapshot.path("recordRefs").size()).isEqualTo(2)
+        assertThat(snapshot.path("complete").asBoolean()).isTrue()
+        assertThat(entries.map { json.readTree(it.detail).path("outcome").asText() })
+            .contains("BEFORE_WINDOW", "APPLIED", "INITIAL_SNAPSHOT")
+        val applied = json.readTree(entries.single { json.readTree(it.detail).path("outcome").asText() == "APPLIED" }.detail)
+        assertThat(applied.path("caseRef").asText()).matches("[a-f0-9]{64}")
+        assertThat(result.seen).isEqualTo(1)
+        assertThat(nativeRecords.findByNamespaceAndKindAndActiveTrue(f.service.namespace(f.kid.id, f.credentials, f.scope()), SchoolRecordKind.EXAM)).hasSize(1)
+        assertThat(f.suppression).containsExactly(true)
+    }
+
+    @Test fun `diagnostic retention removes only old diagnostics and preserves normal audit history`() {
+        val cutoff = clock.instant().minus(java.time.Duration.ofDays(60))
+        val oldDiagnostic = auditEntries.saveAndFlush(de.schoolagent.domain.model.AuditEntry(
+            action = "DIAGNOSTIC_SCHOOL_RECORD", createdAt = cutoff.minusSeconds(1)))
+        val oldHistory = auditEntries.saveAndFlush(de.schoolagent.domain.model.AuditEntry(
+            action = "CASE_CREATED", createdAt = cutoff.minusSeconds(1)))
+        val recentDiagnostic = auditEntries.saveAndFlush(de.schoolagent.domain.model.AuditEntry(
+            action = "DIAGNOSTIC_SCHOOL_RECORD", createdAt = cutoff.plusSeconds(120)))
+        diagnostics.prune()
+        assertThat(auditEntries.existsById(oldDiagnostic.id)).isFalse()
+        assertThat(auditEntries.existsById(oldHistory.id)).isTrue()
+        assertThat(auditEntries.existsById(recentDiagnostic.id)).isTrue()
+        assertThat(auditEntries.findRecentHistory(
+            org.springframework.data.domain.PageRequest.of(0, 200)))
+            .allMatch { !it.action.startsWith("DIAGNOSTIC_") }
+    }
+
+    @Test fun `failed business transactions do not erase diagnostic evidence`() {
+        val run = UUID.randomUUID()
+        transactions.executeWithoutResult { status ->
+            diagnostics.record(de.schoolagent.diagnostics.DiagnosticTrace(de.schoolagent.diagnostics.DiagnosticStage.SCHOOL_SYNC,
+                de.schoolagent.diagnostics.DiagnosticOutcome.FAILED, run = run))
+            status.setRollbackOnly()
+        }
+        assertThat(auditEntries.findAll().any { it.detail?.contains(run.toString()) == true }).isTrue()
     }
 
     @Test fun `native section baselines are quiet independently of old letter sync and duplicates fail only their feed`() {
@@ -690,6 +739,32 @@ class CasesApiTest {
         assertThat(searchFor("planetarium", two.id)).hasSize(1)
         assertThat(searchFor("' ; --", one.id)).isEmpty()
         assertThat(get("/api/search?q=x", morgan.first, morgan.second).statusCode.value()).isEqualTo(400)
+    }
+
+
+    @Test fun `manual actions and requirements accept quotes backslashes and line breaks`() {
+        val c = caseService.createCase(title="Case\twith control characters", childId=UUID.fromString("00000000-0000-0000-0000-000000000003"))
+        val text = "Bring \"signed\" form\nCheck C:\\notes"
+        val headers = HttpHeaders().apply { setBasicAuth(morgan.first, morgan.second); contentType = org.springframework.http.MediaType.APPLICATION_JSON }
+        for ((path, field) in listOf("actions" to "title", "requirements" to "description")) {
+            val response = rest.exchange(url("/api/$path/case/${c.id}"), HttpMethod.POST,
+                HttpEntity(json.writeValueAsString(mapOf(field to text)), headers), String::class.java)
+            assertThat(response.statusCode.value()).isEqualTo(200)
+            assertThat(json.readTree(response.body).path(field).asText()).isEqualTo(text)
+            val change = changes.findByCaseIdOrderByCreatedAtAsc(c.id).last()
+            assertThat(json.readTree(change.afterJson).path(field).asText()).isEqualTo(text)
+        }
+    }
+
+    @Test fun `repeated feedback of the same type persists including multiline notes`() {
+        val c = caseService.createCase(title="Example feedback", childId=UUID.fromString("00000000-0000-0000-0000-000000000003"))
+        val headers = HttpHeaders().apply { setBasicAuth(morgan.first, morgan.second); contentType = org.springframework.http.MediaType.APPLICATION_JSON }
+        repeat(2) {
+            val response = rest.exchange(url("/api/cases/${c.id}/feedback"), HttpMethod.POST,
+                HttpEntity(json.writeValueAsString(mapOf("type" to "WRONG_DATE", "note" to "Check \"Friday\"\nNot Thursday")), headers), String::class.java)
+            assertThat(response.statusCode.value()).isEqualTo(200)
+        }
+        assertThat(auditEntries.findByCaseIdOrderByCreatedAtDesc(c.id).count { it.action == "FEEDBACK_WRONG_DATE" }).isEqualTo(2)
     }
 
 }

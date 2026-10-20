@@ -28,7 +28,7 @@ class WhatsappWebhookControllerTest {
 
     @BeforeEach
     fun setUp() {
-        every { config.appSecrets() } returns emptyList()
+        every { config.appSecrets() } returns listOf("test-secret")
         every { config.config() } returns WhatsAppConfigService.Config(
             apiUrl = "https://graph.facebook.com/v23.0",
             phoneNumberId = "1",
@@ -41,7 +41,13 @@ class WhatsappWebhookControllerTest {
         every { config.withChild<Unit>(any(), any()) } answers {
             secondArg<() -> Unit>().invoke()
         }
-        controller = WhatsappWebhookController(config, qa, client, graph, photos, health, outbox)
+        val inbox = mockk<WhatsappInbox>()
+        val processor = WhatsappMessageProcessor(config, qa, graph, photos)
+        every { inbox.enqueue(any(), any()) } answers {
+            processor.prepare(firstArg(), secondArg())?.let { client.sendText(it.recipient, it.text) }
+            Unit
+        }
+        controller = WhatsappWebhookController(config, outbox, inbox)
     }
 
     @Test
@@ -50,7 +56,7 @@ class WhatsappWebhookControllerTest {
         every { config.userForNumber("12025550111") } returns morgan
         every { qa.answerAndRemember("hi", morgan) } returns ChatAnswer("hello from school")
 
-        val response = controller.inbound(TEXT_PAYLOAD, signature = null)
+        val response = controller.inbound(TEXT_PAYLOAD, signature = sign(TEXT_PAYLOAD))
 
         assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
         verify { config.withChild(childId, any()) }
@@ -64,7 +70,7 @@ class WhatsappWebhookControllerTest {
         every { qa.answerAndRemember("pending", morgan) } returns ChatAnswer("Swimming on Tuesday")
 
         val payload = TEXT_PAYLOAD.replace("\"hi\"", "\"pending\"")
-        val response = controller.inbound(payload, signature = null)
+        val response = controller.inbound(payload, signature = sign(payload))
 
         assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
         verify { qa.answerAndRemember("pending", morgan) }
@@ -73,7 +79,7 @@ class WhatsappWebhookControllerTest {
 
     @Test
     fun `status callbacks without messages are ignored`() {
-        val response = controller.inbound(STATUS_PAYLOAD, signature = null)
+        val response = controller.inbound(STATUS_PAYLOAD, signature = sign(STATUS_PAYLOAD))
 
         assertThat(response.statusCode).isEqualTo(HttpStatus.OK)
         assertThat(response.body).isEqualTo("ok")
@@ -91,6 +97,13 @@ class WhatsappWebhookControllerTest {
         assertThat(controller.inbound(payload, signature).statusCode).isEqualTo(HttpStatus.OK)
         verify(exactly = 4) { outbox.record(any()) }
         verify(exactly = 0) { client.sendText(any(), any()) }
+    }
+
+    private fun sign(payload: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256").apply {
+            init(javax.crypto.spec.SecretKeySpec("test-secret".toByteArray(), "HmacSHA256"))
+        }
+        return "sha256=" + mac.doFinal(payload.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     companion object {
@@ -128,4 +141,13 @@ class WhatsappWebhookControllerTest {
             }
         """.trimIndent()
     }
+
+    @Test fun `missing app secret rejects all inbound activity`() {
+        every { config.appSecrets() } returns emptyList()
+        assertThat(controller.inbound(TEXT_PAYLOAD, null).statusCode).isEqualTo(HttpStatus.FORBIDDEN)
+        verify(exactly = 0) { config.recordWebhook() }
+        verify(exactly = 0) { client.sendText(any(), any()) }
+        verify(exactly = 0) { outbox.record(any()) }
+    }
+
 }

@@ -61,6 +61,58 @@ class SchemaAndRepositoriesTest {
     @Autowired lateinit var userRepo: AppUserRepository
     @Autowired lateinit var formRepo: de.schoolagent.domain.repo.ExternalFormRepository
 
+    @Autowired lateinit var kids: de.schoolagent.domain.repo.ChildRepository
+
+    @Test fun `calendar target reconciliation is scoped and preserves old target identity`() {
+        val kid = kids.save(de.schoolagent.domain.model.Child(name = "Calendar scope"))
+        val other = kids.save(de.schoolagent.domain.model.Child(name = "Other scope"))
+        fun event(child: java.util.UUID, target: String): SchoolEvent {
+            val c = caseRepo.save(de.schoolagent.domain.model.SchoolCase(childId = child, title = "Synthetic exam"))
+            return eventRepo.save(SchoolEvent(caseId = c.id, title = "Exam", eventType = EventType.EXAM,
+                startTime = Instant.parse("2026-11-20T12:00:00Z"), googleEventId = "existing-event",
+                googleCalendarId = target, googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.SYNCED,
+                dedupKey = java.util.UUID.randomUUID().toString()))
+        }
+        val changed = event(kid.id, "old-calendar")
+        val same = event(kid.id, "new-calendar")
+        val unrelated = event(other.id, "unrelated-calendar")
+        assertThat(eventRepo.queueCalendarReconciliation(kid.id, "new-calendar", Instant.now())).isEqualTo(1)
+        assertThat(eventRepo.findById(changed.id).orElseThrow().googleSyncStatus).isEqualTo(de.schoolagent.domain.enums.GoogleSyncStatus.PENDING)
+        assertThat(eventRepo.findById(changed.id).orElseThrow().googleCalendarId).isEqualTo("old-calendar")
+        for (id in listOf(same.id, unrelated.id)) assertThat(eventRepo.findById(id).orElseThrow().googleSyncStatus)
+            .isEqualTo(de.schoolagent.domain.enums.GoogleSyncStatus.SYNCED)
+    }
+
+    @Test
+    fun `calendar backfill selects only eligible events for one child with retry backoff`() {
+        val kid = kids.save(de.schoolagent.domain.model.Child(name = "Calendar Example"))
+        val other = kids.save(de.schoolagent.domain.model.Child(name = "Other Example"))
+        val now = Instant.parse("2026-10-20T12:00:00Z")
+        fun create(child: java.util.UUID = kid.id, start: Instant = now.plusSeconds(3600),
+                   type: EventType = EventType.EXAM,
+                   state: de.schoolagent.domain.enums.EventStatus = de.schoolagent.domain.enums.EventStatus.PLANNED,
+                   sync: de.schoolagent.domain.enums.GoogleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.PENDING,
+                   updated: Instant = now.minusSeconds(600)): SchoolEvent {
+            val c = caseRepo.save(de.schoolagent.domain.model.SchoolCase(childId = child, title = "Calendar example"))
+            return eventRepo.save(SchoolEvent(caseId = c.id, title = "Example event", eventType = type,
+                startTime = start, status = state, googleSyncStatus = sync, dedupKey = java.util.UUID.randomUUID().toString(), updatedAt = updated))
+        }
+        val pending = create()
+        val retry = create(sync = de.schoolagent.domain.enums.GoogleSyncStatus.ERROR)
+        create(child = other.id)
+        create(start = now.minusSeconds(86400))
+        create(type = EventType.SCHOOL_REPORT)
+        create(state = de.schoolagent.domain.enums.EventStatus.CANCELLED)
+        create(sync = de.schoolagent.domain.enums.GoogleSyncStatus.SYNCED)
+        create(sync = de.schoolagent.domain.enums.GoogleSyncStatus.ERROR, updated = now)
+        val removal = create(start = now.minusSeconds(86400), state = de.schoolagent.domain.enums.EventStatus.CANCELLED,
+            sync = de.schoolagent.domain.enums.GoogleSyncStatus.ERROR).apply { googleEventId = "example-projection" }
+        eventRepo.saveAndFlush(removal)
+        val selected = eventRepo.findPendingCalendarProjections(kid.id, now, now.minusSeconds(300), org.springframework.data.domain.PageRequest.of(0, 50))
+        assertThat(selected).containsExactlyInAnyOrder(pending.id, retry.id, removal.id)
+        assertThat(eventRepo.lockForCalendarProjection(pending.id).orElseThrow().id).isEqualTo(pending.id)
+    }
+
     @Test
     fun `seeded family exists`() {
         assertThat(userRepo.findByName("morgan")?.displayName).isEqualTo("morgan")

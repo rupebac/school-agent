@@ -51,6 +51,13 @@ class GmailIngestionServiceTest {
             return messages.keys.toList()
         }
 
+        override fun listMessagePage(maxResults: Int, pageToken: String?): de.schoolagent.connectors.gmail.MessageIdPage {
+            val all = listMessageIds(maxResults)
+            val offset = pageToken?.toInt() ?: 0
+            val next = (offset + maxResults).takeIf { it < all.size }?.toString()
+            return de.schoolagent.connectors.gmail.MessageIdPage(all.drop(offset).take(maxResults), next)
+        }
+
         override fun fetchMetadata(id: String): MessageMetadata = messages.getValue(id)
 
         override fun fetchRaw(id: String): ByteArray = raws.getValue(id)
@@ -118,6 +125,17 @@ class GmailIngestionServiceTest {
         gmail.messages[id] = MessageMetadata(from = "school@example.org", subject = subject, internalDateMs = internalMs)
         gmail.raws[id] = "RAW-$id".toByteArray()
         if (attachment != null) gmail.attachments[id] = listOf(attachment)
+    }
+
+    @Test fun `large mailbox progresses in bounded pages and a repeated sweep remains idempotent`() {
+        repeat(1000) { message("synthetic-$it", "School notice", it.toLong()) }
+        repeat(40) {
+            val result = service.pollOnce()
+            assertThat(result.inspected).isEqualTo(25)
+            assertThat(result.ingested).isEqualTo(25)
+        }
+        assertThat(savedSources).hasSize(1000)
+        assertThat(service.pollOnce().ingested).isZero()
     }
 
     @Test

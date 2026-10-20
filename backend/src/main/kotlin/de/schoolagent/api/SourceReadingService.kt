@@ -104,7 +104,7 @@ class SourceReadingService(
         val extracted = try {
             TextExtractor.byMimeType(bytes, mime)?.text?.trim().orEmpty()
         } catch (e: Exception) {
-            log.debug("text extraction failed: {}", e.message)
+            log.debug("text extraction failed: {}", e.javaClass.simpleName)
             ""
         }
         if (extracted.length >= MIN_TEXT) return extracted
@@ -123,7 +123,7 @@ class SourceReadingService(
             if (pdf) TextExtractor.renderPdfPages(bytes, maxPages = 4)
             else listOfNotNull(asPng(bytes))
         } catch (e: Exception) {
-            log.debug("could not render source for reading: {}", e.message)
+            log.debug("could not render source for reading: {}", e.javaClass.simpleName)
             return null
         }
         if (images.isEmpty()) return null
@@ -136,7 +136,7 @@ class SourceReadingService(
             )
             jsonField(raw, "text")?.trim()?.takeIf { it.isNotBlank() }
         } catch (e: Exception) {
-            log.debug("vision transcription failed: {}", e.message)
+            log.debug("vision transcription failed: {}", e.javaClass.simpleName)
             null
         }
     }
@@ -171,10 +171,10 @@ class SourceReadingService(
                 translated to (translated != original)
             }
         } catch (e: AiUnavailableException) {
-            log.warn("Translation unavailable: source={} language={} chars={} reason={}", source.id, language.code, original.length, e.message?.take(300))
+            log.warn("Translation unavailable: source={} language={} chars={} reason={}", source.id, language.code, original.length, e.javaClass.simpleName)
             original to false
         } catch (e: Exception) {
-            log.warn("Translation failed: source={} language={} chars={} reason={}", source.id, language.code, original.length, e.message?.take(300))
+            log.warn("Translation failed: source={} language={} chars={} reason={}", source.id, language.code, original.length, e.javaClass.simpleName)
             original to false
         }
     }

@@ -5,6 +5,7 @@ import de.schoolagent.domain.model.*
 import de.schoolagent.domain.repo.*
 import de.schoolagent.inbox.InboxCopy
 import de.schoolagent.inbox.InboxCopyService
+import de.schoolagent.diagnostics.*
 import io.mockk.*
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -23,9 +24,10 @@ class NotificationServiceTest {
     private val copy = mockk<InboxCopyService>(relaxed = true)
     private val outbox = mockk<WhatsappOutbox>(relaxed = true)
     private val inbox = mockk<de.schoolagent.domain.service.FamilyInboxService>(relaxed = true)
+    private val diagnostics = mockk<IntegrationDiagnostics>(relaxed = true)
     private val parent = AppUser(name = "morgan", displayName = "Morgan", passwordHash = "x", whatsappNumber = "+49123")
     private val clock = Clock.fixed(Instant.parse("2026-10-02T16:00:00Z"), ZoneOffset.UTC)
-    private val service = NotificationService(config, mockk(relaxed = true), actions, events, cases, users, kids, clock, mockk(relaxed = true), inbox, copy, outbox)
+    private val service = NotificationService(config, mockk(relaxed = true), actions, events, cases, users, kids, clock, mockk(relaxed = true), inbox, copy, outbox, diagnostics)
     private fun case(score: Int = 4) = SchoolCase(title = "School copying fee by 5 October", summary = "Prepare €17.20", importanceScore = score, status = CaseStatus.ACTION_REQUIRED)
     init {
         every { cases.save(any<SchoolCase>()) } answers { firstArg() }
@@ -40,6 +42,10 @@ class NotificationServiceTest {
         parent.instantEnabled = false
         service.notifyDecision(case())
         verify(exactly = 0) { outbox.enqueue(any(), any(), any(), any(), any(), any(), any()) }
+        listOf(DiagnosticOutcome.QUIET_IMPORT, DiagnosticOutcome.MUTED, DiagnosticOutcome.CLOSED,
+            DiagnosticOutcome.LOW_PRIORITY, DiagnosticOutcome.NO_RECIPIENTS).forEach { outcome ->
+            verify { diagnostics.record(match { it.stage == DiagnosticStage.NOTICE && it.outcome == outcome }) }
+        }
     }
     @Test fun `uses saved concise copy with each structured date and obligation and durable revision key`() {
         val c = case()

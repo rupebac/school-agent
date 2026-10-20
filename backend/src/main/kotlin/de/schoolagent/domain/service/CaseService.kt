@@ -187,7 +187,7 @@ class CaseService(
     }
 
     private fun escape(value: String): String =
-        value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
+        com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value).let { it.substring(1, it.length - 1) }
 
     enum class AttachResult { ATTACHED, ATTACHED_AND_REOPENED, ALREADY_ATTACHED }
 }

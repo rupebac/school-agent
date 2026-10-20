@@ -5,6 +5,7 @@ import de.schoolagent.common.DedupKeys
 import de.schoolagent.connectors.google.GoogleOAuthService
 import de.schoolagent.connectors.school.*
 import de.schoolagent.documents.DocumentStore
+import de.schoolagent.diagnostics.*
 import de.schoolagent.domain.enums.*
 import de.schoolagent.domain.model.*
 import de.schoolagent.domain.repo.*
@@ -38,6 +39,7 @@ class SchoolRecordIngestionService(
     private val oauth: GoogleOAuthService,
     private val transactions: TransactionTemplate,
     private val clock: Clock,
+    private val diagnostics: IntegrationDiagnostics? = null,
 ) {
     private val json = ObjectMapper()
     private val berlin = ZoneId.of("Europe/Berlin")
@@ -46,24 +48,44 @@ class SchoolRecordIngestionService(
     private val effectLocks = Array(64) { Any() }
 
     fun sync(childId: UUID, credentials: SchoolCredentials, scope: SchoolStudentScope,
-             feeds: List<SchoolRecordFeed>, from: LocalDate, to: LocalDate, initialImport: Boolean): Result {
+             feeds: List<SchoolRecordFeed>, from: LocalDate, to: LocalDate, initialImport: Boolean, run: UUID = UUID.randomUUID()): Result {
         val namespace = namespace(childId, credentials, scope)
+        fun trace(outcome: DiagnosticOutcome, feed: SchoolRecordFeed, record: SchoolRecord? = null, caseId: UUID? = null) {
+            val entry = DiagnosticTrace(if (record == null) DiagnosticStage.SCHOOL_FEED else DiagnosticStage.SCHOOL_RECORD,
+                outcome, run, childId, caseId = caseId, recordKey = record?.let { key(namespace, it) }, provider = credentials.provider,
+                kind = feed.kind, count = if (record == null) feed.records.size else null, complete = if (record == null) feed.complete else null)
+            if (outcome in setOf(DiagnosticOutcome.UNCHANGED, DiagnosticOutcome.BEFORE_WINDOW, DiagnosticOutcome.AFTER_WINDOW))
+                diagnostics?.oncePerDay(entry) else diagnostics?.record(entry)
+        }
         var seen = 0; var changed = 0; var failed = 0
         val statuses = feeds.toMutableList()
         for ((index, feed) in feeds.withIndex()) {
+            // Save the complete set, including past exams, before applying any filters.
+            // Identical sets need one daily checkpoint; a changed set is recorded immediately.
+            diagnostics?.snapshot(DiagnosticTrace(DiagnosticStage.SCHOOL_SNAPSHOT,
+                when (feed.status) { SchoolFeedStatus.AVAILABLE -> DiagnosticOutcome.AVAILABLE
+                    SchoolFeedStatus.UNAVAILABLE -> DiagnosticOutcome.UNAVAILABLE; SchoolFeedStatus.FAILED -> DiagnosticOutcome.FAILED },
+                run, childId, provider = credentials.provider, kind = feed.kind, count = feed.records.size, complete = feed.complete,
+                recordKeys = feed.records.map { key(namespace, it) }))
             if (feed.status != SchoolFeedStatus.AVAILABLE) continue
             if (scope.studentId.isNullOrBlank() || feed.records.any { it.kind != feed.kind || (it.kind == SchoolRecordKind.EXAM && it.date == null) } ||
                 feed.records.map { it.id }.distinct().size != feed.records.size) {
                 failed++
                 statuses[index] = feed.copy(status = SchoolFeedStatus.FAILED, complete = false,
                     message = "Invalid child binding, dates or duplicate record identifiers; this section has been kept unchanged and will retry")
+                trace(DiagnosticOutcome.INVALID_FEED, feed)
                 continue
             }
             val firstSnapshot = !config.hasRecordBaseline(childId, namespace, feed.kind)
+            if (firstSnapshot) trace(DiagnosticOutcome.INITIAL_SNAPSHOT, feed)
             val keys = mutableSetOf<String>()
             var feedFailed = false
             for (record in feed.records) {
-                if (record.kind == SchoolRecordKind.EXAM && (record.date == null || record.date !in from..to)) continue
+                val examDate = record.date
+                if (record.kind == SchoolRecordKind.EXAM && examDate != null && examDate !in from..to) {
+                    trace(if (examDate.isBefore(from)) DiagnosticOutcome.BEFORE_WINDOW else DiagnosticOutcome.AFTER_WINDOW, feed, record)
+                    continue
+                }
                 seen++
                 val key = key(namespace, record)
                 keys += key
@@ -71,8 +93,10 @@ class SchoolRecordIngestionService(
                     val payload = payload(record)
                     val hash = DedupKeys.sha256(payload)
                     val previous = records.findById(key).orElse(null)
+                    val sameFacts = previous?.contentHash == hash && previous.active
                     if (previous?.contentHash == hash && previous.active && !previous.wordingPending &&
                         previous.wordingVersion == SchoolRecordInterpreter.WORDING_VERSION) {
+                        trace(DiagnosticOutcome.UNCHANGED, feed, record, previous.caseId)
                         finish(previous)
                         continue
                     }
@@ -87,10 +111,13 @@ class SchoolRecordIngestionService(
                         } else apply(childId, credentials, namespace, key, record, payload, hash, copy, latest,
                             initialImport || firstSnapshot).also { changed++ }
                     }!!
+                    trace(if (sameFacts) DiagnosticOutcome.WORDING_REPAIRED else DiagnosticOutcome.APPLIED, feed, record, stored.caseId)
+                    if (previous == null && (initialImport || firstSnapshot)) trace(DiagnosticOutcome.INITIAL_SNAPSHOT, feed, record)
                     finish(stored)
                 } catch (e: Exception) {
                     failed++; feedFailed = true
-                    log.warn("Native school record import failed child={} kind={} ({})", childId, record.kind, e.javaClass.simpleName)
+                    trace(DiagnosticOutcome.FAILED, feed, record)
+                    log.warn("Native school record import failed run={} kind={} errorType={}", run, record.kind, e.javaClass.simpleName)
                 }
             }
             // Neither denied access, a partial fetch nor a failed import can erase existing facts.
@@ -104,9 +131,15 @@ class SchoolRecordIngestionService(
                             guard(childId, credentials, scope)
                             cancel(old)
                         }
+                        diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_RECORD, DiagnosticOutcome.WITHDRAWN, run, childId,
+                            caseId = old.caseId, recordKey = old.recordKey, provider = credentials.provider, kind = old.kind))
                         finish(old)
                         changed++
-                    } catch (_: Exception) { failed++; feedFailed = true }
+                    } catch (e: Exception) {
+                        failed++; feedFailed = true
+                        diagnostics?.record(DiagnosticTrace(DiagnosticStage.SCHOOL_RECORD, DiagnosticOutcome.FAILED, run, childId,
+                            caseId = old.caseId, recordKey = old.recordKey, provider = credentials.provider, kind = old.kind))
+                    }
                 }
             }
             if (feedFailed) statuses[index] = feed.copy(status = SchoolFeedStatus.FAILED, complete = false,

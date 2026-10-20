@@ -34,6 +34,8 @@ management:
         include: health,info
 
 schoolagent:
+  browser:
+    worker-url: ${SCHOOLAGENT_BROWSER_WORKER_URL:}
   timezone: Europe/Berlin
   initial-username: ${SCHOOLAGENT_INITIAL_USERNAME:}
   initial-password: ${SCHOOLAGENT_INITIAL_PASSWORD:}

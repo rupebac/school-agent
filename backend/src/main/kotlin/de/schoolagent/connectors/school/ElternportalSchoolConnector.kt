@@ -12,9 +12,10 @@ import java.time.format.DateTimeFormatter
 
 @Service
 class ElternportalSchoolConnector : SchoolConnector {
+    internal var clientFactory: () -> HttpElternportalClient = { HttpElternportalClient() }
     override val provider = SchoolProvider.ELTERNPORTAL
     override fun connect(credentials: SchoolCredentials): SchoolSession {
-        val client = HttpElternportalClient()
+        val client = clientFactory()
         client.login(credentials.url, credentials.username, credentials.password)
         return object : SchoolSession {
             private val parser = ElternportalRecordsParser()

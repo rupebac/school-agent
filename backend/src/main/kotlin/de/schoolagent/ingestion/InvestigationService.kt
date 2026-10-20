@@ -104,7 +104,7 @@ class InvestigationService(
 
         val toCrawl = candidateLinks
             .filter { Links.isRelevant("", it) }
-            .filter { !sourceRepo.existsByDedupKey(DedupKeys.source(SourceType.WEBPAGE, it)) }
+            .filter { !sourceRepo.existsByDedupKey(DedupKeys.source(SourceType.WEBPAGE, "$caseId:$it")) }
             .take(MAX_PAGES_PER_CASE)
 
         for (url in toCrawl) {
@@ -118,7 +118,7 @@ class InvestigationService(
                         caseId = caseId,
                         sourceType = SourceType.WEBPAGE,
                         externalId = canonical,
-                        dedupKey = DedupKeys.source(SourceType.WEBPAGE, canonical),
+                        dedupKey = DedupKeys.source(SourceType.WEBPAGE, "$caseId:$canonical"),
                         contentHash = hash,
                         title = page.finalUrl,
                         canonicalUrl = canonical,
@@ -141,17 +141,18 @@ class InvestigationService(
                 }
             } catch (e: Exception) {
                 // JS-only page? try the read-only browser worker (spec §11)
-                val rendered = runCatching { worker.render(url) }.getOrNull()
+                val rendered = if (e is de.schoolagent.crawler.BlockedCrawlException) null
+                    else runCatching { worker.render(url) }.getOrNull()
                 if (rendered != null) {
                     pages++
                     val canonical = Links.canonicalize(rendered.finalUrl) ?: rendered.finalUrl
                     val stored = documents.put(rendered.text.toByteArray(Charsets.UTF_8))
-                    sourceRepo.save(
+                    val jsSource = sourceRepo.save(
                         Source(
                             caseId = caseId,
                             sourceType = SourceType.WEBPAGE_JS,
                             externalId = canonical,
-                            dedupKey = DedupKeys.source(SourceType.WEBPAGE_JS, canonical),
+                            dedupKey = DedupKeys.source(SourceType.WEBPAGE_JS, "$caseId:$canonical"),
                             contentHash = stored,
                             title = rendered.title ?: canonical,
                             canonicalUrl = canonical,
@@ -163,13 +164,12 @@ class InvestigationService(
                         ),
                     )
                     recordStep(investigation.id, StepType.BROWSER_RENDER, canonical, StepOutcome.OK)
-                    val jsSourceId = java.util.UUID.nameUUIDFromBytes(canonical.toByteArray())
-                    recordFacts(caseId, jsSourceId, rendered.text)
-                    extraction.extract(caseId, jsSourceId, rendered.text)
+                    recordFacts(caseId, jsSource.id, rendered.text)
+                    extraction.extract(caseId, jsSource.id, rendered.text)
                 } else {
                     recordStep(investigation.id, StepType.FETCH_URL, url, StepOutcome.FAILED)
                     notes += "could not fetch $url: ${e.message}"
-                    log.debug("crawl failed for {}: {}", url, e.message)
+                    log.debug("external crawl failed: {}", e.javaClass.simpleName)
                 }
             }
         }
@@ -212,7 +212,7 @@ class InvestigationService(
                     else { investigate(c.id); true }
                 } == true
             }.onSuccess { if (it) investigated++ }
-                .onFailure { log.warn("investigate failed for case {}: {}", c.id, it.message) }
+                .onFailure { log.warn("investigate failed for case {}: {}", c.id, it.javaClass.simpleName) }
         }
         return investigated
     }
@@ -290,7 +290,7 @@ class InvestigationService(
                 )
             }
         } catch (e: Exception) {
-            log.debug("form detection failed: {}", e.message)
+            log.debug("form detection failed: {}", e.javaClass.simpleName)
         }
     }
 
@@ -346,7 +346,7 @@ class InvestigationService(
             }
             recordStep(investigationId, StepType.EXTRACT, "vision:${sourceId}", StepOutcome.OK)
         } catch (e: Exception) {
-            log.warn("vision extraction failed for source {}: {}", sourceId, e.message)
+            log.warn("vision extraction failed for source {}: {}", sourceId, e.javaClass.simpleName)
             recordStep(investigationId, StepType.EXTRACT, "vision:${sourceId}", StepOutcome.FAILED)
         }
     }

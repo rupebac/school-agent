@@ -37,4 +37,17 @@ class WhatsAppConfigServiceTest {
         verify { vault.store("whatsapp.token", "new-token") }
         verify { settings.save(match { it.key == "whatsapp.phone-number-id" && it.valueJson == "family" }) }
     }
+
+    @Test fun `sender authentication compares complete numbers and refuses ambiguous matches`() {
+        val users = mockk<de.schoolagent.domain.repo.AppUserRepository>()
+        val account = de.schoolagent.domain.model.AppUser(name="example", displayName="Example", passwordHash="unused", whatsappNumber="+1 202 555 0111")
+        every { users.findAll() } returns listOf(account)
+        val service = WhatsAppConfigService(mockk(), mockk(), users, mockk(), Clock.systemUTC(), "https://school.example.test")
+        assertThat(service.userForNumber("12025550111")).isSameAs(account)
+        assertThat(service.userForNumber("442025550111")).isNull()
+        assertThat(service.userForNumber("")).isNull()
+        every { users.findAll() } returns listOf(account, de.schoolagent.domain.model.AppUser(name="other", displayName="Other", passwordHash="unused", whatsappNumber="+12025550111"))
+        assertThat(service.userForNumber("12025550111")).isNull()
+    }
+
 }

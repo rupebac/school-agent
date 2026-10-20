@@ -16,28 +16,26 @@
  */
 const express = require('express');
 const { chromium } = require('playwright');
+const { safeUrl, protectContext } = require('./network-policy');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-const MAX_BYTES = 5 * 1024 * 1024;
-const ALLOWED = new Set(['http:', 'https:']);
-
-function safeUrl(raw) {
-  let url;
-  try { url = new URL(String(raw)); } catch { return null; }
-  if (!ALLOWED.has(url.protocol)) return null;
-  return url;
-}
-
+let active = 0;
 app.get('/health', (_req, res) => res.json({ status: 'UP', mode: 'read-only' }));
 
 app.post('/render', async (req, res) => {
-  const url = safeUrl(req.body?.url);
-  if (!url) return res.status(400).json({ error: 'invalid or disallowed url' });
-  const browser = await chromium.launch();
+  let url;
+  try { url = safeUrl(req.body?.url); } catch { return res.status(400).json({ error: 'invalid or disallowed url' }); }
+  if (active >= 2) return res.status(429).json({ error: 'Browser worker busy' });
+  active++;
+  let browser; let deadline;
   try {
-    const page = await browser.newPage({ userAgent: 'SchoolAgent/0.1 (family private agent)' });
+    browser = await chromium.launch({ chromiumSandbox: true, args: ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] });
+    deadline = setTimeout(() => { browser.close().catch(() => {}); }, 25000);
+    const context = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: false });
+    await protectContext(context);
+    const page = await context.newPage();
     const response = await page.goto(url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
     const status = response ? response.status() : null;
     const links = await page.$$eval('a[href]', (as) =>
@@ -51,18 +49,25 @@ app.post('/render', async (req, res) => {
       links,
     });
   } catch (e) {
-    res.status(502).json({ error: `render failed: ${e.message}` });
+    res.status(502).json({ error: 'render failed' });
   } finally {
-    await browser.close();
+    clearTimeout(deadline);
+    try { await browser?.close(); } finally { active--; }
   }
 });
 
 app.post('/form', async (req, res) => {
-  const url = safeUrl(req.body?.url);
-  if (!url) return res.status(400).json({ error: 'invalid or disallowed url' });
-  const browser = await chromium.launch();
+  let url;
+  try { url = safeUrl(req.body?.url); } catch { return res.status(400).json({ error: 'invalid or disallowed url' }); }
+  if (active >= 2) return res.status(429).json({ error: 'Browser worker busy' });
+  active++;
+  let browser; let deadline;
   try {
-    const page = await browser.newPage();
+    browser = await chromium.launch({ chromiumSandbox: true, args: ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] });
+    deadline = setTimeout(() => { browser.close().catch(() => {}); }, 25000);
+    const context = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: false });
+    await protectContext(context);
+    const page = await context.newPage();
     await page.goto(url.toString(), { waitUntil: 'domcontentloaded', timeout: 20000 });
     const forms = await page.$$eval('form', (nodes) =>
       nodes.map((form) => ({
@@ -80,9 +85,10 @@ app.post('/form', async (req, res) => {
     );
     res.json({ url: page.url(), forms });
   } catch (e) {
-    res.status(502).json({ error: `form inspection failed: ${e.message}` });
+    res.status(502).json({ error: 'form inspection failed' });
   } finally {
-    await browser.close();
+    clearTimeout(deadline);
+    try { await browser?.close(); } finally { active--; }
   }
 });
 

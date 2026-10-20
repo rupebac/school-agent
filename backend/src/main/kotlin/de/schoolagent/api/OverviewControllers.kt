@@ -315,7 +315,7 @@ class AuditController(
         if (caseId != null && caseId !in visible) throw org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN, "no access")
         val entries = caseId
             ?.let { auditRepo.findByCaseIdOrderByCreatedAtDesc(it) }
-            ?: auditRepo.findTop200ByOrderByCreatedAtDesc()
+            ?: auditRepo.findRecentHistory(org.springframework.data.domain.PageRequest.of(0, 200))
         return entries.filter { (it.caseId == null && access.isAdmin(user)) || it.caseId in visible }.map {
             AuditDto(
                 id = it.id,
@@ -382,11 +382,7 @@ class RequirementsController(
     @PutMapping("/{id}/complete")
     fun complete(@PathVariable id: UUID, @AuthenticationPrincipal user: UserDetails): RequirementListDto {
         requireRequirementAccess(id, user)
-        val found = requirementRepo.findById(id).orElse(null)
-            ?: throw org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND, "requirement not found")
-        found.status = de.schoolagent.domain.enums.RequirementStatus.DONE
-        found.updatedAt = clock.instant()
-        val saved = requirementRepo.save(found)
+        val saved = requirements.complete(id, user.toActor())
         return saved.toDto(caseRepo.findById(saved.caseId).orElse(null)?.title)
     }
 

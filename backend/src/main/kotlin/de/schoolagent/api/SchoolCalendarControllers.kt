@@ -166,13 +166,13 @@ class UserPreferencesController(
             if (!it.matches(Regex("^([01]?\\d|2[0-3]):[0-5]\\d$"))) {
                 throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid time format (HH:mm)")
             }
-            account.briefingTime = it
+            account.briefingTime = java.time.LocalTime.parse(it, java.time.format.DateTimeFormatter.ofPattern("H:mm")).toString()
         }
         request.weeklyTime?.let {
             if (!it.matches(Regex("^([01]?\\d|2[0-3]):[0-5]\\d$"))) {
                 throw ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid time format (HH:mm)")
             }
-            account.weeklyTime = it
+            account.weeklyTime = java.time.LocalTime.parse(it, java.time.format.DateTimeFormatter.ofPattern("H:mm")).toString()
         }
         account.updatedAt = clock.instant()
         users.save(account)

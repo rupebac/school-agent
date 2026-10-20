@@ -146,25 +146,16 @@ class FamilyRulesController(
     )
 
     companion object {
-        fun asJsonText(text: String): String {
-            val trimmed = text.trim()
-            if (trimmed.startsWith("{") || trimmed.startsWith("[")) return trimmed
-            val escaped = trimmed.replace("\\", "\\\\").replace("\"", "\\\"")
-            return """{"text":"$escaped"}"""
-        }
+        private val json = com.fasterxml.jackson.databind.ObjectMapper()
+
+        fun asJsonText(text: String): String = json.writeValueAsString(mapOf("text" to text.trim()))
 
         fun displayText(raw: String?): String {
             if (raw.isNullOrBlank()) return ""
-            for (field in listOf("text", "note", "caseTitle")) {
-                val marker = "\"$field\":\""
-                val idx = raw.indexOf(marker)
-                if (idx >= 0) {
-                    val start = idx + marker.length
-                    val end = raw.indexOf('"', start)
-                    if (end > start) return raw.substring(start, end).replace("\\\"", "\"").replace("\\\\", "\\")
-                }
-            }
-            return raw
+            val node = runCatching { json.readTree(raw) }.getOrNull() ?: return raw
+            return listOf("text", "note", "caseTitle").firstNotNullOfOrNull { field ->
+                node.path(field).takeIf { it.isTextual && it.asText().isNotBlank() }?.asText()
+            } ?: raw
         }
     }
 }

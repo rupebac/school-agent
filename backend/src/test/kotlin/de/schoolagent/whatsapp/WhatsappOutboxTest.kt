@@ -7,6 +7,7 @@ import de.schoolagent.domain.model.*
 import de.schoolagent.domain.repo.*
 import de.schoolagent.health.HealthTracker
 import de.schoolagent.i18n.UserLanguage
+import de.schoolagent.diagnostics.*
 import io.mockk.*
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -35,9 +36,10 @@ class WhatsappOutboxTest {
     private val received = mutableMapOf<String, WhatsappReceipt>()
     private val parent = AppUser(name = "morgan", displayName = "Morgan", passwordHash = "x", whatsappNumber = "+49123")
     private val inbox = mockk<de.schoolagent.domain.service.FamilyInboxService>(relaxed = true)
+    private val diagnostics = mockk<IntegrationDiagnostics>(relaxed = true)
     private lateinit var outbox: WhatsappOutbox
     @BeforeEach fun setup() {
-        outbox = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health, clock, inbox)
+        outbox = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health, clock, inbox, diagnostics = diagnostics)
         every { config.config() } returns WhatsAppConfigService.Config("https://graph.facebook.com/v25.0", "phone", "waba", "t", null, null, "https://school.example.org")
         every { config.isConfigured() } returns true
         every { rows.existsByDedupKey(any()) } answers { saved.any { it.dedupKey == firstArg<String>() } }
@@ -68,6 +70,13 @@ class WhatsappOutboxTest {
         assertThat(row.message).isEqualTo(WaTemplates.render(message(), config.config().frontendUrl))
         outbox.record(status("delivered"))
         assertThat(row.status).isEqualTo(NotificationStatus.DELIVERED)
+        verifyOrder {
+            diagnostics.record(match { it.outcome == DiagnosticOutcome.QUEUED && it.notificationId == row.id })
+            diagnostics.record(match { it.outcome == DiagnosticOutcome.DUPLICATE })
+            diagnostics.record(match { it.outcome == DiagnosticOutcome.SENDING && it.notificationId == row.id })
+            diagnostics.record(match { it.outcome == DiagnosticOutcome.ACCEPTED && it.notificationId == row.id })
+            diagnostics.record(match { it.outcome == DiagnosticOutcome.DELIVERED && it.notificationId == row.id })
+        }
         outbox.record(status("read")); outbox.record(status("sent")); outbox.record(status("failed", 131000))
         assertThat(row.status).isEqualTo(NotificationStatus.READ)
         assertThat(row.lastError).isNull()

@@ -58,6 +58,14 @@ class GoogleCalendarSetupServiceTest {
         service = GoogleCalendarSetupService(admin, oauth, props, settings, kidsMock, clock)
     }
 
+    @Test fun `pending OAuth destination validation pauses old calendar projections`() {
+        stored[GoogleCalendarSetupService.SETTING_KEY] = "previous-calendar"
+        stored[GoogleCalendarSetupService.readyKey(null)] = "false"
+        assertThat(service.resolveCalendarId()).isEqualTo("primary")
+        stored[GoogleCalendarSetupService.readyKey(null)] = "true"
+        assertThat(service.resolveCalendarId()).isEqualTo("previous-calendar")
+    }
+
     @Test
     fun `resolveCalendarId prefers the stored choice over the env property`() {
         stored[GoogleCalendarSetupService.SETTING_KEY] = "cal-abc@group.calendar.google.com"

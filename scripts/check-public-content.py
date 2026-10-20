@@ -23,7 +23,8 @@ def findings(path, text):
             except ValueError:
                 continue
             if any(address in network for network in PRIVATE_NETWORKS) and not (
-                path == 'scripts/check-public-content.py' and line.startswith('PRIVATE_NETWORKS =')):
+                path == 'scripts/check-public-content.py' and (line.startswith('PRIVATE_NETWORKS =') or line.startswith('RFC1918_FIXTURE_VALUES ='))
+                or path in RFC1918_FIXTURE_FILES and value in RFC1918_FIXTURE_VALUES):
                 result.append((number, 'private-network-address'))
         if re.search(r'/home/[A-Za-z][A-Za-z0-9_.-]*/|/Users/[A-Za-z][A-Za-z0-9_.-]*/', line):
             result.append((number, 'personal-home-path'))
@@ -44,6 +45,16 @@ def reserved(domain):
     return domain in {'example.com', 'example.org', 'example.net'} or domain.endswith(
         ('.example', '.test', '.invalid', '.example.com', '.example.org', '.example.net'))
 
+
+# Public RFC 1918 block boundaries and synthetic boundary-test inputs only.
+# This exception is limited to exact values in the SSRF policy and its tests;
+# other addresses in those files, and these values anywhere else, still fail.
+RFC1918_FIXTURE_FILES = {
+    'playwright-worker/network-policy.js',
+    'playwright-worker/network-policy.test.js',
+    'backend/src/test/kotlin/de/schoolagent/crawler/PublicNetworkPolicyTest.kt',
+}
+RFC1918_FIXTURE_VALUES = {'10.0.0.0', '10.0.0.1', '172.16.0.0', '172.16.0.1', '192.168.0.0', '192.168.0.1', '192.168.1.1'}
 
 PRIVATE_NETWORKS = tuple(ipaddress.ip_network(value) for value in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 

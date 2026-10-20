@@ -50,10 +50,10 @@ class TitleEnglishService(
                 translated
             }
         } catch (e: AiUnavailableException) {
-            log.debug("title translation unavailable: {}", e.message)
+            log.debug("title translation unavailable: {}", e.javaClass.simpleName)
             trimmed
         } catch (e: Exception) {
-            log.debug("title translation failed: {}", e.message)
+            log.debug("title translation failed: {}", e.javaClass.simpleName)
             trimmed
         }
     }

@@ -1,0 +1,63 @@
+name: Tests and builds
+on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - run: docker info > /dev/null
+      - run: ./backend/mvnw -B -f backend/pom.xml verify
+      - name: Require all integration tests to run
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          reports=glob.glob('backend/target/surefire-reports/TEST-*.xml')
+          assert reports, 'No test results'
+          assert not any(int(ET.parse(p).getroot().get('skipped','0')) for p in reports), 'Skipped tests are not accepted'
+          PY
+  frontend-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            playwright-worker/package-lock.json
+      - run: npm ci && npm test -- --watch=false && npm run build && npm audit --audit-level=high
+        working-directory: frontend
+      - run: npm ci --ignore-scripts && node --test network-policy.test.js && npm audit --audit-level=high
+        working-directory: playwright-worker
+      - run: python3 scripts/test-public-content.py && python3 scripts/test-release.py && bash -n deploy/*.sh
+      - run: docker build -t school-agent-worker:test playwright-worker
+      - run: scripts/test-worker.sh
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - run: ./backend/mvnw -B -f backend/pom.xml -DskipTests package
+      - run: npx playwright install --with-deps chromium
+        working-directory: playwright-worker
+      - run: node scripts/e2e.mjs
+      - run: python3 scripts/test-recovery.py

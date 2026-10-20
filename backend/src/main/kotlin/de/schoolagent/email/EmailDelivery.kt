@@ -23,5 +23,12 @@ class EmailDelivery(
 )
 interface EmailDeliveryRepository : JpaRepository<EmailDelivery, UUID> {
     fun findByChildId(childId: UUID): List<EmailDelivery>
+    fun existsByChildIdAndGmailId(childId: UUID, gmailId: String): Boolean
+    fun findFirstByChildIdAndOriginalMessageId(childId: UUID, originalMessageId: String): EmailDelivery?
+    fun findFirstByChildIdAndFingerprint(childId: UUID, fingerprint: String): EmailDelivery?
+    fun findFirstByChildIdAndGmailThreadId(childId: UUID, gmailThreadId: String): EmailDelivery?
+    fun findFirstByChildIdAndOriginalMessageIdIn(childId: UUID, originalMessageIds: Collection<String>): EmailDelivery?
+    @org.springframework.data.jpa.repository.Query(value = "select * from email_delivery where child_id=:childId and :messageId=any(string_to_array(reference_ids,chr(10))) limit 1", nativeQuery = true)
+    fun findReferencing(childId: UUID, messageId: String): EmailDelivery?
     fun findBySourceIdIn(sourceIds: Collection<UUID>): List<EmailDelivery>
 }

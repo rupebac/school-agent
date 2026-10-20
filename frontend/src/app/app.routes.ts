@@ -3,7 +3,6 @@ import { authGuard } from './core/auth.guard';
 import { Shell } from './layout/shell';
 import { LoginPage } from './pages/login/login';
 import { InboxPage } from './pages/inbox/inbox';
-import { CaseDetailPage } from './pages/case-detail/case-detail';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -17,7 +16,7 @@ export const routes: Routes = [
         path: '',
         component: InboxPage,
         data: { section: 'inbox', title: 'nav.inbox', wide: true },
-        children: [{ path: 'cases/:id', component: CaseDetailPage }],
+        children: [{ path: 'cases/:id', loadComponent: () => import('./pages/case-detail/case-detail').then(m => m.CaseDetailPage) }],
       },
       { path: 'cases', pathMatch: 'full', redirectTo: '' },
       { path: 'actions', pathMatch: 'full', redirectTo: '' },

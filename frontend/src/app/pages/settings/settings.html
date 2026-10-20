@@ -89,6 +89,7 @@
                   <p class="warn">{{ 'set.google.serverMissing' | t }}</p>
                 } @else if (s.connected) {
                   <p class="ok">{{ 'set.google.connected' | t }}</p>
+                  <p class="muted">{{ 'set.google.calendarSync' | t }}</p>
                   <p class="muted">{{ s.pollingEnabled ? ('set.google.pollingOn' | t) : ('set.google.pollingOff' | t) }}</p>
                   <button type="button" class="ghost" (click)="google.disconnect(settingsKidId())" [disabled]="google.busy()">
                     {{ 'set.google.disconnect' | t }}
@@ -100,6 +101,10 @@
                 <p class="muted">{{ 'common.loading' | t }}</p>
               }
             </section>
+          }
+
+          @if (panel() === 'google' && auth.isAdmin) {
+            <button type="button" class="ghost" (click)="setArea('family')">{{ 'set.googleClient.manage' | t }}</button>
           }
 
           @if (panel() === 'google' && settingsKidId()) { <app-school-email-settings [kid]="settingsKidId()!" /> }
@@ -251,6 +256,10 @@
           </div>
         </header>
 
+        @if (auth.isAdmin) {
+          <app-google-client-settings (saved)="google.refresh(settingsKidId())" />
+        }
+
         <section class="card editor">
           <h2>{{ 'set.archive.h' | t }}</h2>
           <p class="muted" id="archive-help">{{ 'set.archive.help' | t }}</p>
@@ -291,7 +300,7 @@
                 <label>{{ 'set.kids.name' | t }} <input type="text" [(ngModel)]="newKid.name" /></label>
                 <label>{{ 'set.kids.school' | t }} <input type="text" [(ngModel)]="newKid.school" /></label>
                 <label>{{ 'set.kids.class' | t }} <input type="text" [(ngModel)]="newKid.className" /></label>
-                <label>{{ 'set.kids.accounts' | t }} <input type="text" [(ngModel)]="newKid.accountNames" placeholder="parent-login, other-parent-login" /></label>
+                <label>{{ 'set.kids.accounts' | t }} <input type="text" [(ngModel)]="newKid.accountNames" [placeholder]="'set.family.accountPlaceholder' | t" /></label>
               </div>
               <div class="actions">
                 <button type="button" [disabled]="newKid.name.length < 2" (click)="addKid()">{{ 'set.kids.add' | t }}</button>
@@ -393,9 +402,10 @@
           }
         </section>
 
+        @if (auth.isAdmin) {
             <section class="card editor">
-              <h2>{{ 'set.wa.h' | t }} — Family</h2>
-              <p class="muted">One WhatsApp connection for all children. New-letter messages name the child; briefings clearly group school matters by child and date. Each parent chooses their own number and notification preferences.</p>
+              <h2>{{ 'set.wa.h' | t }} — {{ 'set.family.title' | t }}</h2>
+              <p class="muted">{{ 'set.family.whatsappIntro' | t }}</p>
               @if (whatsapp.status(); as s) {
                 <p class="muted">
                   {{ s.lastWebhookAt ? ('set.wa.last' | t: { when: (s.lastWebhookAt | ldate: 'dd.MM.yyyy HH:mm') }) : ('set.wa.noneYet' | t) }}
@@ -473,13 +483,14 @@
                 <p class="muted">{{ m }}</p>
               }
             </section>
+        }
 
         <details class="card editor ai-box">
           <summary>{{ 'set.ai.h' | t }}</summary>
           @if (aiUsage(); as u) {
             <p class="muted">{{ 'set.family.aiSummary' | t: { calls: u.totalCalls, in: u.inputTokens, out: u.outputTokens } }}</p>
           }
-          <p class="muted">Shared AI models for all children. {{ 'set.ai.intro' | t }}</p>
+          <p class="muted">{{ 'set.family.aiIntro' | t }} {{ 'set.ai.intro' | t }}</p>
           <div class="model-rows">
             @for (m of models(); track m.role) {
               <div class="model-row">

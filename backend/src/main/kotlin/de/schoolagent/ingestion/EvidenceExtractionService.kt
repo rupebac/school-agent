@@ -68,9 +68,9 @@ class EvidenceExtractionService(
             }
             log.debug("extraction stored {} facts for source {}", stored, sourceId)
         } catch (e: AiUnavailableException) {
-            log.debug("extraction model unavailable: {}", e.message)
+            log.debug("extraction model unavailable: {}", e.javaClass.simpleName)
         } catch (e: Exception) {
-            log.warn("extraction failed for source {}: {}", sourceId, e.message)
+            log.warn("extraction failed for source {}: {}", sourceId, e.javaClass.simpleName)
         }
     }
 

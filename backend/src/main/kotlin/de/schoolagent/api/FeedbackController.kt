@@ -56,8 +56,9 @@ class FeedbackController(
         // rule for future reasoning (spec §35: feedback becomes context)
         ruleRepo.save(
             FamilyRule(
-                ruleKey = "feedback:${request.type.name.lowercase()}",
-                ruleValue = """{"caseTitle":"${caseEntity.title.replace("\"", "")}","note":"${(request.note ?: "").replace("\"", "")}","by":"${user.username}","at":"$now"}""",
+                ruleKey = "feedback:${request.type.name.lowercase()}:${UUID.randomUUID()}",
+                ruleValue = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(mapOf(
+                    "caseTitle" to caseEntity.title, "note" to request.note.orEmpty(), "by" to "MANUAL", "at" to now.toString())),
                 createdAt = now,
                 updatedAt = now,
             ),
@@ -66,7 +67,7 @@ class FeedbackController(
         when (request.type) {
             FeedbackType.IRRELEVANT -> {
                 if (de.schoolagent.domain.statemachine.CaseStateMachine.canTransition(caseEntity.status, CaseStatus.CANCELLED))
-                    lifecycle.transition(caseEntity, CaseStatus.CANCELLED, actor, "marked irrelevant by ${user.username}")
+                    lifecycle.transition(caseEntity, CaseStatus.CANCELLED, actor, "marked irrelevant by a parent")
             }
             FeedbackType.NOT_IMPORTANT -> { caseEntity.muted = true }
             FeedbackType.ALWAYS_NOTIFY -> { caseEntity.muted = false; caseEntity.importance = Importance.IMMEDIATE; caseEntity.importanceScore = 5 }
@@ -79,7 +80,7 @@ class FeedbackController(
                 caseId = id,
                 actor = actor,
                 action = "FEEDBACK_${request.type.name}",
-                detail = request.note?.take(300),
+                detail = request.note?.take(300)?.let { com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(mapOf("note" to it)) },
                 createdAt = now,
             ),
         )

@@ -5,6 +5,22 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Local review and follow-up on 2026-10-20: [source and regression audit](docs/REVIEW-2026-10-20.md)
+records the initial fixes and corrections for all nine follow-up findings: connector
+network restrictions, Calendar target reconciliation/stable IDs, durable inbound
+WhatsApp, guarded deployment/full recovery, audited requirement completion, bounded
+document/Gmail processing, sandboxed browser worker, functional CI and bilingual UI.
+The backend and frontend fixes were deployed on 2026-10-20 with migrations V31–V33.
+Full recovery backup, migration checksums, running images, public health, frontend
+fingerprint and bounded log rotation were verified. The optional browser worker
+remains inactive; its updated source and sandbox policy are available for activation.
+
+Validation: 432 backend tests, 87 frontend tests, worker policy/isolation checks,
+real PostgreSQL recovery and release failure-gate checks pass. The frontend builds
+at 466.64 kB, below its initial-bundle warning budget. Real-backend shared-browser
+checks cover login, persistent child creation, Calendar, Spanish settings and mobile
+layout. Live provider behavior and production load remain separate validation.
+
 The application supports multiple children and two school providers (one provider
 per child), shared family AI/WhatsApp configuration, parent-specific read marks and
 notification preferences, email ingestion, document reading and a filtered calendar.
@@ -18,6 +34,35 @@ notification preferences, email ingestion, document reading and a filtered calen
   retention. Original cases remain accessible after hiding them from the active inbox.
 - Calendar provides dates, high-importance labels, holiday shading and an Exams filter.
   iOS/Android PWA support and persisted child/navigation selection are implemented.
+- Private integration diagnostics retain 60 days of school-feed snapshots, skipped
+  record reasons, reminder decisions and WhatsApp queue/delivery transitions. Snapshots
+  use opaque references and daily checkpoints plus immediate set changes, including
+  records discarded as historical. Normal audit history is kept separate from diagnostic
+  noise. Docker logs rotate at 5 MB × 3 files per service with compression; diagnostics
+  survive restarts in PostgreSQL. Deployed on 2026-10-20; rotation is verified on
+  the running services. Validation: 386 backend tests (including PostgreSQL
+  integration tests), 84 frontend tests,
+  Compose logging checks and privacy/secret scans pass.
+- Administrators can now manage the shared Google OAuth client in Family settings.
+  Client credentials are encrypted, secrets are never returned to the browser, and
+  existing environment configuration remains the fallback. The bilingual setup guide
+  displays the exact server callback to copy into Google Cloud and distinguishes app
+  registration from each child's mailbox connection. Client replacement requires
+  confirmation and reconnecting all accounts; same-client secret rotation preserves
+  refresh tokens. Pending consent and cached access cannot use outdated credentials.
+  Deployed on 2026-10-20; live health and the new frontend are verified.
+  Validation: 386 backend tests, 84 frontend tests,
+  production frontend build, desktop/mobile browser checks and privacy/secret scans
+  pass. The build retains the existing initial-bundle warning (515.38/500 kB).
+- Google Calendar now backfills pending upcoming events after a child's connection,
+  without requiring another school import. A bounded per-child job runs every minute,
+  waits for the dedicated school calendar, and retries failed projections after five
+  minutes. Row locks and status rechecks prevent racing ingestion/backfill inserts;
+  cancelled events, historical events and school reports are excluded. Calendar API
+  timestamps use RFC 3339 offsets. Typed calendar diagnostics retain 60 days and API
+  failures omit provider response bodies. Validation: 394 backend tests, 84 frontend
+  tests and the production frontend build pass. Deployed on 2026-10-20; live
+  health, frontend version and successful initial Calendar backfill are verified.
 - WhatsApp daily/weekly plans reuse the existing template catalog, identify each child,
   avoid duplicating related bullets, and limit tomorrow's agenda to tomorrow's items.
 - Native school feeds support class-scoped exams, forgotten homework/material reports
@@ -53,7 +98,9 @@ notification preferences, email ingestion, document reading and a filtered calen
 - The release is prepared as one root commit, with a private external backup of the
   original history. Repository visibility remains PRIVATE. A Git history rewrite alone
   cannot purge hosting caches; resolve those before changing visibility. This cleanup
-  has not been deployed to an existing installation.
+  was deployed to an existing installation on 2026-10-20 after verifying and
+  updating only the reviewed V2/V7/V8/V9 checksum metadata. Private database/file
+  backups and rollback images were retained; the vault key and data were preserved.
 
 ## Project presentation
 
@@ -69,8 +116,9 @@ notification preferences, email ingestion, document reading and a filtered calen
 
 - Populated school payment/report layouts need verification against authorized live
   records; empty feeds and denial responses do not prove compatibility with all layouts.
-- Live Google insert/update/delete behavior requires an authorized connected calendar.
-  Retry paths and report exclusions are covered by automated tests.
+- Live Google insert/backfill behavior is verified with an authorized connected calendar.
+  Live update/delete behavior still needs verification; retry paths, child isolation,
+  duplicate prevention and report exclusions are covered by automated tests.
 - Cross-source exam matching needs reliable identity; do not merge exams by date alone.
 - Parentheses or school reference codes must not become invented teacher/track meanings.
 - Preserve all privacy checks as integrations and example fixtures evolve.

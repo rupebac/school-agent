@@ -28,7 +28,7 @@ class PipelineSweepJob(
     @EventListener(ApplicationReadyEvent::class)
     fun onBoot() {
         runCatching { reasoning.recalibrateStoredScores() }
-            .onFailure { log.warn("score recap on boot: {}", it.message) }
+            .onFailure { log.warn("score recap on boot: {}", it.javaClass.simpleName) }
     }
 
     /** Repair older mixed lists in the background, reusing persisted AI decisions. */
@@ -46,8 +46,8 @@ class PipelineSweepJob(
             investigation.investigateAllPending()
             reasoning.reasonAllPending()
             reasoning.recalibrateStoredScores()
-        }.onFailure { log.debug("pipeline sweep: {}", it.message) }
+        }.onFailure { log.debug("pipeline sweep: {}", it.javaClass.simpleName) }
         runCatching { notifications.skipLeftoverDigestQueue() }
-            .onFailure { log.debug("digest leftover cleanup: {}", it.message) }
+            .onFailure { log.debug("digest leftover cleanup: {}", it.javaClass.simpleName) }
     }
 }

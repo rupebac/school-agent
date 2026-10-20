@@ -49,6 +49,43 @@ class SettingsSecretsApiTest {
         }
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    lateinit var secretRefs: de.schoolagent.domain.repo.SecretRefRepository
+
+    @Test
+    fun `Google client settings are admin only encrypted and never return the secret`() {
+        val path = "/api/admin/google/client"
+        assertThat(exchange(HttpMethod.GET, path, auth = false).statusCode.value()).isEqualTo(401)
+        assertThat(exchange(HttpMethod.PUT, path, "{}", auth = false).statusCode.value()).isEqualTo(401)
+        val parent = "oauth-parent"
+        val created = exchange(HttpMethod.POST, "/api/admin/users",
+            """{"name":"$parent","displayName":"Example Parent","password":"test-parent-password","role":"PARENT"}""")
+        assertThat(created.statusCode.value()).isEqualTo(200)
+        for (method in listOf(HttpMethod.GET, HttpMethod.PUT)) {
+            val headers = HttpHeaders().apply { setBasicAuth(parent, "test-parent-password"); contentType = MediaType.APPLICATION_JSON }
+            val result = try { rest.exchange(url(path), method, HttpEntity("{}", headers), String::class.java) }
+                catch (e: HttpClientErrorException) { ResponseEntity(e.responseBodyAsString, e.statusCode) }
+            assertThat(result.statusCode.value()).isEqualTo(403)
+        }
+        val saved = exchange(HttpMethod.PUT, path,
+            """{"clientId":"example.apps.googleusercontent.com","clientSecret":"synthetic-oauth-secret","confirmClientChange":true}""")
+        assertThat(saved.statusCode.value()).describedAs(saved.body).isEqualTo(200)
+        assertThat(saved.headers.cacheControl).isEqualTo("no-store")
+        assertThat(saved.body).contains("\"hasSecret\":true", "\"source\":\"settings\"").doesNotContain("synthetic-oauth-secret", "clientSecret")
+        assertThat(exchange(HttpMethod.GET, path).body).isEqualTo(saved.body)
+        val stored = secretRefs.findById(de.schoolagent.connectors.google.GoogleClientConfigService.CONFIG_KEY).orElseThrow()
+        assertThat(stored.cipherText).doesNotContain("synthetic-oauth-secret", "example.apps.googleusercontent.com")
+        val retained = exchange(HttpMethod.PUT, path, """{"clientId":"example.apps.googleusercontent.com","clientSecret":""}""")
+        assertThat(retained.body).isEqualTo(saved.body)
+        val conflict = exchange(HttpMethod.PUT, path, """{"clientId":"changed.apps.googleusercontent.com","clientSecret":"replacement-private-value"}""")
+        assertThat(conflict.statusCode.value()).isEqualTo(409)
+        assertThat(conflict.body).doesNotContain("replacement-private-value")
+        assertThat(exchange(HttpMethod.GET, path).body).isEqualTo(saved.body)
+        val invalid = exchange(HttpMethod.PUT, path, """{"clientId":"invalid-private-value","clientSecret":"replacement-private-value"}""")
+        assertThat(invalid.statusCode.value()).isEqualTo(400)
+        assertThat(invalid.body).doesNotContain("invalid-private-value", "replacement-private-value")
+    }
+
     @Test
     fun `school email domains are child scoped validated and authenticated`() {
         val kid = "00000000-0000-0000-0000-000000000003"
@@ -134,6 +171,27 @@ class SettingsSecretsApiTest {
         assertThat(switched.body).contains("ELTERNPORTAL").doesNotContain("SCHULMANAGER", "Taylor Example")
         assertThat(exchange(HttpMethod.DELETE, "/api/school-connection/config$query").statusCode.is2xxSuccessful).isTrue()
         assertThat(exchange(HttpMethod.GET, "/api/school-connection/status$query").body).contains("\"configured\":false")
+    }
+
+
+    @Test fun `ordinary parents cannot administer the shared WhatsApp integration`() {
+        for ((method, path) in listOf(HttpMethod.GET to "/status", HttpMethod.PUT to "/config", HttpMethod.POST to "/test",
+            HttpMethod.POST to "/templates/sync", HttpMethod.POST to "/subscribe-waba")) {
+            val headers = HttpHeaders().apply { setBasicAuth("casey", "test-only-password"); contentType = MediaType.APPLICATION_JSON }
+            val response = try { rest.exchange(url("/api/whatsapp$path"), method, HttpEntity("{}", headers), String::class.java) }
+                catch (e: HttpClientErrorException) { ResponseEntity(e.responseBodyAsString, e.statusCode) }
+            assertThat(response.statusCode.value()).describedAs("$method $path").isEqualTo(403)
+        }
+    }
+
+    @Test fun `parents cannot bypass child scoping through the legacy Google connection`() {
+        for ((method, path) in listOf(HttpMethod.GET to "/status", HttpMethod.GET to "/authorize", HttpMethod.DELETE to "/connection",
+            HttpMethod.GET to "/calendar-setup", HttpMethod.POST to "/calendar-setup")) {
+            val headers = HttpHeaders().apply { setBasicAuth("casey", "test-only-password"); contentType=MediaType.APPLICATION_JSON }
+            val response = try { rest.exchange(url("/api/google$path"), method, HttpEntity("{}", headers), String::class.java) }
+                catch (e: HttpClientErrorException) { ResponseEntity(e.responseBodyAsString, e.statusCode) }
+            assertThat(response.statusCode.value()).describedAs("$method $path").isEqualTo(403)
+        }
     }
 
 }

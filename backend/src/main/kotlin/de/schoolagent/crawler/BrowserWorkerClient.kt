@@ -20,10 +20,12 @@ class BrowserWorkerClient(
     fun available(): Boolean = workerUrl.isNotBlank()
 
     fun render(url: String): RenderedPage {
+        if (!available()) throw CrawlException("Browser worker is disabled")
+        PublicNetworkPolicy.addresses(PublicNetworkPolicy.uri(url).host)
         val headers = HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON }
         val raw = rest.postForObject(
             "$workerUrl/render",
-            HttpEntity("""{"url":"$url"}""", headers),
+            HttpEntity(mapOf("url" to url), headers),
             String::class.java,
         ) ?: throw CrawlException("empty worker response")
         val node: JsonNode = com.fasterxml.jackson.databind.ObjectMapper().readTree(raw)

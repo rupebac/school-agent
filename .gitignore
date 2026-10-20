@@ -54,3 +54,9 @@ test-results/
 # Frontend build
 frontend/dist/
 frontend/.angular/
+
+# Private deployment recovery state
+deploy/.release.lock
+deploy/.last-recovery-point
+deploy/.prepared-recovery-point
+deploy/.restore-previous.*/

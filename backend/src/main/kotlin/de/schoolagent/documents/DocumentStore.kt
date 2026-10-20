@@ -32,17 +32,25 @@ class FileSystemDocumentStore(
         val file = pathFor(hash)
         if (!Files.exists(file)) {
             Files.createDirectories(file.parent)
-            Files.write(file, content)
+            val pending = Files.createTempFile(file.parent, ".document-", ".tmp")
+            try {
+                Files.write(pending, content)
+                Files.move(pending, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } finally { Files.deleteIfExists(pending) }
         }
         return hash
     }
 
     override fun get(ref: String): ByteArray? {
+        if (!validRef(ref)) return null
         val file = pathFor(ref)
         return if (Files.exists(file)) Files.readAllBytes(file) else null
     }
 
-    override fun exists(ref: String): Boolean = Files.exists(pathFor(ref))
+    override fun exists(ref: String): Boolean = validRef(ref) && Files.exists(pathFor(ref))
+
+    private fun validRef(ref: String): Boolean = ref.matches(Regex("[0-9a-f]{64}"))
 
     private fun pathFor(hash: String): Path =
         root.resolve(hash.substring(0, 2)).resolve(hash.substring(2, 4)).resolve(hash)

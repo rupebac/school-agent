@@ -29,6 +29,7 @@ class SchoolEvent(
     var location: String? = null,
     @Enumerated(EnumType.STRING) var status: EventStatus = EventStatus.PLANNED,
     var googleEventId: String? = null,
+    var googleCalendarId: String? = null,
     @Enumerated(EnumType.STRING) var googleSyncStatus: GoogleSyncStatus = GoogleSyncStatus.PENDING,
     var dedupKey: String,
     var supersededById: UUID? = null,

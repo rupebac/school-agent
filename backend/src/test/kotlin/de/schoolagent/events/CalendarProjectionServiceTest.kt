@@ -57,6 +57,7 @@ class CalendarProjectionServiceTest {
     @BeforeEach
     fun setUp() {
         calendar = FakeCalendar()
+        every { eventRepo.lockForCalendarProjection(any()) } returns java.util.Optional.empty()
         every { eventRepo.save(any<SchoolEvent>()) } answers { firstArg() }
         every { calendarSetup.resolveCalendarId() } returns "jamie-schule"
         val caseRepoMock = io.mockk.mockk<de.schoolagent.domain.repo.SchoolCaseRepository>()
@@ -82,6 +83,33 @@ class CalendarProjectionServiceTest {
         dedupKey = "evt-test",
     )
 
+    @Test fun `switching targets inserts into the new calendar without changing the old calendar`() {
+        val e = event("old-id").apply { googleCalendarId = "previous-calendar" }
+        service.syncEvent(e)
+        assertThat(calendar.inserted).hasSize(1)
+        assertThat(calendar.updated).isEmpty()
+        assertThat(calendar.deleted).isEmpty()
+        assertThat(e.googleCalendarId).isEqualTo("jamie-schule")
+    }
+
+    @Test fun `same target reconnect keeps the existing event identity`() {
+        val e = event("old-id").apply { googleCalendarId = "jamie-schule" }
+        service.syncEvent(e)
+        assertThat(calendar.inserted).isEmpty()
+        assertThat(calendar.updated.single().first).isEqualTo("old-id")
+    }
+
+    @Test fun `ambiguous insert retries reuse exactly the same client event id`() {
+        val e = event()
+        calendar.failInsert = true
+        service.syncEvent(e)
+        calendar.failInsert = false
+        service.syncEvent(e)
+        val payload = ObjectMapper().readTree(calendar.inserted.single())
+        assertThat(payload.path("id").asText()).isEqualTo("sa" + e.id.toString().replace("-", ""))
+        assertThat(payload.path("extendedProperties").path("private").path("schoolAgentEvent").asText()).isEqualTo(e.id.toString())
+    }
+
     @Test
     fun `new event is inserted with Berlin timezone and marked SYNCED`() {
         val e = event()
@@ -92,6 +120,10 @@ class CalendarProjectionServiceTest {
         assertThat(e.googleSyncStatus).isEqualTo(GoogleSyncStatus.SYNCED)
         val json = calendar.inserted.single()
         assertThat(json).contains("\"summary\":\"Schullandheim\"")
+        val payload = ObjectMapper().readTree(json)
+        assertThat(payload.path("start").path("dateTime").asText()).isEqualTo("2026-10-12T08:00:00+02:00")
+        java.time.OffsetDateTime.parse(payload.path("start").path("dateTime").asText())
+        java.time.OffsetDateTime.parse(payload.path("end").path("dateTime").asText())
         assertThat(json).contains("+02:00") // Europe/Berlin offset in October 2026
         assertThat(json).contains("Jugendhaus Alpenrand")
         verify(exactly = 1) { health.success(ConnectorType.CALENDAR) }
@@ -148,4 +180,49 @@ class CalendarProjectionServiceTest {
         assertThat(calendar.inserted).isEmpty()
         assertThat(e.googleSyncStatus).isEqualTo(GoogleSyncStatus.NOT_APPLICABLE)
     }
+    @Test
+    fun `backfill rechecks the locked event and never inserts an already synced event twice`() {
+        val e = event()
+        every { eventRepo.lockForCalendarProjection(e.id) } returns java.util.Optional.of(e)
+        assertThat(service.syncPendingEvent(e.id)).isTrue()
+        assertThat(service.syncPendingEvent(e.id)).isFalse()
+        assertThat(calendar.inserted).hasSize(1)
+        assertThat(calendar.updated).isEmpty()
+    }
+
+    @Test
+    fun `backfill retries a failed insert and excludes cancelled events`() {
+        val e = event()
+        every { eventRepo.lockForCalendarProjection(e.id) } returns java.util.Optional.of(e)
+        calendar.failInsert = true
+        assertThat(service.syncPendingEvent(e.id)).isFalse()
+        assertThat(e.googleSyncStatus).isEqualTo(GoogleSyncStatus.ERROR)
+        calendar.failInsert = false
+        assertThat(service.syncPendingEvent(e.id)).isTrue()
+        e.googleEventId = null
+        e.googleSyncStatus = GoogleSyncStatus.PENDING
+        e.status = de.schoolagent.domain.enums.EventStatus.CANCELLED
+        assertThat(service.syncPendingEvent(e.id)).isFalse()
+        assertThat(calendar.inserted).hasSize(1)
+    }
+
+    @Test fun `failed cancellations are retried without inserting a replacement`() {
+        val e = event("g-7").apply { status = de.schoolagent.domain.enums.EventStatus.CANCELLED }
+        every { eventRepo.lockForCalendarProjection(e.id) } returns java.util.Optional.of(e)
+        calendar.failDelete = true
+        assertThat(service.syncPendingEvent(e.id)).isFalse()
+        calendar.failDelete = false
+        assertThat(service.syncPendingEvent(e.id)).isTrue()
+        assertThat(calendar.deleted).containsExactly("g-7")
+        assertThat(calendar.inserted).isEmpty()
+    }
+
+    @Test fun `direct ingestion defers until a dedicated calendar is available`() {
+        every { calendarSetup.resolveCalendarId() } returns "primary"
+        val e = event()
+        service.syncEvent(e)
+        assertThat(calendar.inserted).isEmpty()
+        assertThat(e.googleSyncStatus).isEqualTo(GoogleSyncStatus.PENDING)
+    }
+
 }

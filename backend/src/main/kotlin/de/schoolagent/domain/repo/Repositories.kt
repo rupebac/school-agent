@@ -94,6 +94,9 @@ interface ParentActionRepository : JpaRepository<ParentAction, UUID> {
 }
 
 interface ChildRequirementRepository : JpaRepository<ChildRequirement, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select r from ChildRequirement r where r.id = :id")
+    fun lockById(id: UUID): ChildRequirement?
     fun findByCaseIdIn(caseIds: Collection<UUID>): List<ChildRequirement>
     fun findByDedupKey(dedupKey: String): ChildRequirement?
     fun existsByDedupKey(dedupKey: String): Boolean
@@ -101,11 +104,40 @@ interface ChildRequirementRepository : JpaRepository<ChildRequirement, UUID> {
 }
 
 interface SchoolEventRepository : JpaRepository<SchoolEvent, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select e from SchoolEvent e where e.id = :id")
+    fun lockForCalendarProjection(id: UUID): java.util.Optional<SchoolEvent>
+
+    @org.springframework.data.jpa.repository.Query("""
+        select e.id from SchoolEvent e, SchoolCase c
+        where c.id = e.caseId and c.childId = :childId
+          and ((coalesce(e.endTime, e.startTime) >= :from
+            and e.status <> de.schoolagent.domain.enums.EventStatus.CANCELLED
+            and e.eventType <> de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)
+            or (e.googleEventId is not null and
+              (e.status = de.schoolagent.domain.enums.EventStatus.CANCELLED
+                or e.eventType = de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)))
+          and (e.googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.PENDING
+            or (e.googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.ERROR and e.updatedAt <= :retryBefore))
+        order by e.startTime, e.id
+    """)
+    fun findPendingCalendarProjections(childId: UUID, from: java.time.Instant, retryBefore: java.time.Instant,
+        pageable: org.springframework.data.domain.Pageable): List<UUID>
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("""
+        update SchoolEvent e set e.googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.PENDING,
+          e.updatedAt = :now
+        where e.caseId in (select c.id from SchoolCase c where c.childId = :childId or (:childId is null and c.childId is null))
+          and e.googleCalendarId is not null and e.googleCalendarId <> :calendarId
+    """)
+    fun queueCalendarReconciliation(childId: UUID?, calendarId: String, now: java.time.Instant): Int
+
     fun findByCaseIdIn(caseIds: Collection<UUID>): List<SchoolEvent>
     fun findByDedupKey(dedupKey: String): SchoolEvent?
     fun existsByDedupKey(dedupKey: String): Boolean
     fun findByCaseId(caseId: UUID): List<SchoolEvent>
-    fun findByGoogleEventId(googleEventId: String): SchoolEvent?
+    fun findByGoogleCalendarIdAndGoogleEventId(googleCalendarId: String, googleEventId: String): SchoolEvent?
     fun findByStartTimeBetweenOrderByStartTimeAsc(from: java.time.Instant, to: java.time.Instant): List<SchoolEvent>
     fun findByStartTimeGreaterThanEqualOrderByStartTimeAsc(from: java.time.Instant): List<SchoolEvent>
 }
@@ -132,6 +164,11 @@ interface AuditEntryRepository : JpaRepository<AuditEntry, UUID> {
     fun findByCaseIdOrderByCreatedAtAsc(caseId: UUID): List<AuditEntry>
     fun findByCaseIdOrderByCreatedAtDesc(caseId: UUID): List<AuditEntry>
     fun findTop200ByOrderByCreatedAtDesc(): List<AuditEntry>
+    @org.springframework.data.jpa.repository.Query("select a from AuditEntry a where substring(a.action, 1, 11) <> 'DIAGNOSTIC_' order by a.createdAt desc")
+    fun findRecentHistory(pageable: org.springframework.data.domain.Pageable): List<AuditEntry>
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query("delete from AuditEntry a where a.action in ('DIAGNOSTIC_SCHOOL_SYNC', 'DIAGNOSTIC_SCHOOL_FEED', 'DIAGNOSTIC_SCHOOL_SNAPSHOT', 'DIAGNOSTIC_SCHOOL_RECORD', 'DIAGNOSTIC_NOTICE', 'DIAGNOSTIC_BRIEFING', 'DIAGNOSTIC_PLAN_EXAM', 'DIAGNOSTIC_WHATSAPP', 'DIAGNOSTIC_CALENDAR') and a.createdAt < :before")
+    fun deleteDiagnosticsBefore(@org.springframework.data.repository.query.Param("before") before: java.time.Instant): Int
 }
 
 interface ConnectorHealthRepository : JpaRepository<ConnectorHealth, ConnectorType>

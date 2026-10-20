@@ -26,6 +26,10 @@ class HttpElternportalClientTest {
         <a href='service/termine'>Termine</a>$content
     """
 
+    private fun testClient() = HttpElternportalClient(de.schoolagent.crawler.PublicHttpSession(
+        { java.net.URI.create(it) }, { java.net.InetAddress.getAllByName(it) }))
+    private fun connector() = ElternportalSchoolConnector().apply { clientFactory = ::testClient }
+
     @BeforeEach fun start() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->
@@ -56,7 +60,7 @@ class HttpElternportalClientTest {
     @AfterEach fun stop() = server.stop(0)
 
     @Test fun `fresh login selects the requested child and verifies letters through real client code`() {
-        ElternportalSchoolConnector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
             val child = session.selectStudent(SchoolStudentScope("Jamie", "8C", null))!!
             assertThat(child.id).isEqualTo("42"); assertThat(selections).containsExactly("42")
             val letter = session.notices(child.id).single()
@@ -66,7 +70,7 @@ class HttpElternportalClientTest {
         }
     }
     @Test fun `school year rollover blocks only exam section while letters remain accessible`() {
-        ElternportalSchoolConnector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test", "42")).use { session ->
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test", "42")).use { session ->
             session.selectStudent(SchoolStudentScope("Jamie", "7C", "42"))
             assertThat(session.notices("42")).hasSize(1)
             val exam = session.records(SchoolStudentScope("Jamie", "7C", "42"), LocalDate.of(2026, 10, 11), LocalDate.of(2027, 8, 31)).single { it.kind == SchoolRecordKind.EXAM }
@@ -75,11 +79,11 @@ class HttpElternportalClientTest {
         }
     }
     @Test fun `expired authentication and switched account views are not accepted as empty letters`() {
-        val client = HttpElternportalClient(); client.login(base, "parent", "test")
+        val client = testClient(); client.login(base, "parent", "test")
         loginResponse = true
         assertThatThrownBy { client.dashboard() }.isInstanceOf(ElternportalException::class.java)
         loginResponse = false
-        ElternportalSchoolConnector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
             session.selectStudent(SchoolStudentScope("Jamie", "8C", null))
             wrongLetterChild = true
             assertThatThrownBy { session.notices("42") }.isInstanceOf(SchoolConnectionException::class.java)

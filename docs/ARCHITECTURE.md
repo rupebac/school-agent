@@ -123,6 +123,17 @@ Timetable changes use the existing information template with explicit cancellati
 wording. The existing letter-score sweep preserves explicit native priorities by source
 provenance. Status/reasons are visible per child in Settings, including on phones.
 
+`IntegrationDiagnostics` writes fixed-vocabulary diagnostic events to `audit_entry`
+in independent transactions, as well as console logs. Each school sync has a random
+run reference. Feed snapshots retain opaque record references before date filtering;
+changed sets and daily checkpoints preserve evidence of presence/absence without
+copying portal HTML, subject text, pupil IDs or credentials. Per-record decisions link
+opaque record and case references; reminder decisions and outbox transitions explain
+silence, queueing and delivery separately. Diagnostic failures do not block business
+work. Startup and daily cleanup remove only diagnostic entries older than 60 days;
+normal audit history is unaffected and its standard listing excludes diagnostics.
+Container logs have independent size-based rotation; see SETUP.md for the distinction.
+
 ### 1.3 Deterministic vs AI responsibility split (spec §10)
 
 | Deterministic code                       | AI (via ModelRouter)                    |

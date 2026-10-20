@@ -39,4 +39,12 @@ class FileSystemDocumentStoreTest {
         assertThat(store.exists("ab".repeat(32))).isFalse()
         assertThat(store.get("ab".repeat(32))).isNull()
     }
+    @Test fun `invalid references cannot address paths outside the document store`() {
+        val store = FileSystemDocumentStore(tempDir.toString())
+        for (ref in listOf("", "a", "../private", "/etc/hosts", "ab".repeat(31) + "..")) {
+            assertThat(store.get(ref)).isNull()
+            assertThat(store.exists(ref)).isFalse()
+        }
+    }
+
 }

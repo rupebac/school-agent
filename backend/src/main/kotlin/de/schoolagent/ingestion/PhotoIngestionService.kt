@@ -99,9 +99,9 @@ class PhotoIngestionService(
     fun processAsync(caseId: UUID) {
         Thread.startVirtualThread {
             runCatching { investigation.investigate(caseId) }
-                .onFailure { log.warn("photo investigation {}: {}", caseId, it.message) }
+                .onFailure { log.warn("photo investigation {}: {}", caseId, it.javaClass.simpleName) }
             runCatching { reasoning.reason(caseId) }
-                .onFailure { log.warn("photo reasoning {}: {}", caseId, it.message) }
+                .onFailure { log.warn("photo reasoning {}: {}", caseId, it.javaClass.simpleName) }
         }
     }
 

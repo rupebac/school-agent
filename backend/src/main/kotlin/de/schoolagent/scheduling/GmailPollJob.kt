@@ -33,13 +33,13 @@ class GmailPollJob(
         try {
             for (kid in scopes) {
                 runCatching { ingestion.pollOnce(kid) }
-                    .onFailure { log.warn("Gmail poll failed for {}: {}", kid, it.message) }
+                    .onFailure { log.warn("Gmail poll failed for {}: {}", kid, it.javaClass.simpleName) }
             }
             val investigated = investigation.investigateAllPending()
             val reasoned = reasoning.reasonAllPending()
             log.info("pipeline: {} cases investigated, {} reasoned", investigated, reasoned)
         } catch (e: Exception) {
-            log.warn("scheduled gmail poll failed: {}", e.message)
+            log.warn("scheduled gmail poll failed: {}", e.javaClass.simpleName)
         }
     }
 }

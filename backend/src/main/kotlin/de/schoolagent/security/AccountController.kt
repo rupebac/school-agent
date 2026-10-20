@@ -20,6 +20,7 @@ class AccountController(
     private val users: AppUserRepository,
     private val encoder: PasswordEncoder,
     private val clock: Clock,
+    private val rememberTokens: org.springframework.security.web.authentication.rememberme.PersistentTokenRepository,
 ) {
 
     data class ChangePasswordRequest(val oldPassword: String, val newPassword: String)
@@ -27,6 +28,7 @@ class AccountController(
     data class WhatsappRequest(val whatsappNumber: String? = null)
 
     @PostMapping("/password")
+    @org.springframework.transaction.annotation.Transactional
     fun changePassword(@RequestBody request: ChangePasswordRequest, @AuthenticationPrincipal user: UserDetails) {
         if (request.newPassword.length < 8) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "new password must be at least 8 characters")
@@ -38,6 +40,7 @@ class AccountController(
         }
         val hash = encoder.encode(request.newPassword)
             ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "hash failed")
+        rememberTokens.removeUserTokens(account.name)
         account.passwordHash = hash
         account.updatedAt = clock.instant()
         users.save(account)

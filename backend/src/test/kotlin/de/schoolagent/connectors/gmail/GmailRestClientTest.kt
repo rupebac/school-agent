@@ -30,7 +30,10 @@ class GmailRestClientTest {
             .andRespond(withSuccess("""{"messages":[{"id":"second"}]}""", MediaType.APPLICATION_JSON))
         val client = GmailRestClient(oauth, rest, GoogleProperties())
         client.withChild(kid)
-        assertThat(client.listMessageIds(25)).containsExactly("first", "second")
+        val first = client.listMessagePage(25)
+        assertThat(first.ids).containsExactly("first")
+        assertThat(first.nextPageToken).isEqualTo("page2")
+        assertThat(client.listMessagePage(25, first.nextPageToken).ids).containsExactly("second")
         verify(exactly = 2) { oauth.accessToken(kid) }
         server.verify()
     }

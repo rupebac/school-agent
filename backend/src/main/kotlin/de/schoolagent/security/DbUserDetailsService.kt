@@ -16,9 +16,6 @@ class DbUserDetailsService(
     override fun loadUserByUsername(username: String): UserDetails {
         val user = users.findByName(username.lowercase().trim())
             ?: throw UsernameNotFoundException("unknown user: $username")
-        return User.withUsername(user.name)
-            .password(user.passwordHash)
-            .roles(user.role.ifBlank { "PARENT" })
-            .build()
+        return AccountPrincipal(user.name, user.passwordHash, user.role.ifBlank { "PARENT" })
     }
 }

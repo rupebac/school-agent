@@ -90,4 +90,50 @@ class AuthSessionApiTest {
         val me = exchange(HttpMethod.GET, "/api/auth/me")
         assertThat(me.statusCode.value()).isEqualTo(401)
     }
+
+    @Test fun `logging in rotates an existing session identifier`() {
+        val body = """{"username":"morgan","password":"test-only-password","rememberMe":false}"""
+        val first = exchange(HttpMethod.POST, "/api/auth/login", body)
+        val oldSession = cookieValues(first, "JSESSIONID")
+        assertThat(oldSession).isNotEmpty()
+        val second = exchange(HttpMethod.POST, "/api/auth/login", body, oldSession)
+        assertThat(second.statusCode.value()).isEqualTo(200)
+        val newSession = cookieValues(second, "JSESSIONID")
+        assertThat(newSession).isNotEmpty().isNotEqualTo(oldSession)
+        assertThat(exchange(HttpMethod.GET, "/api/auth/me", cookies=oldSession).statusCode.value()).isEqualTo(401)
+        assertThat(exchange(HttpMethod.GET, "/api/auth/me", cookies=newSession).statusCode.value()).isEqualTo(200)
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired lateinit var users: de.schoolagent.domain.repo.AppUserRepository
+    @org.springframework.beans.factory.annotation.Autowired lateinit var encoder: org.springframework.security.crypto.password.PasswordEncoder
+
+    @Test fun `demoted or deleted accounts cannot keep administrator sessions`() {
+        for (delete in listOf(false, true)) {
+            val name = "session-test-${java.util.UUID.randomUUID()}"
+            val account = users.save(de.schoolagent.domain.model.AppUser(name=name, displayName="Example", role="ADMIN",
+                passwordHash=encoder.encode("test-only-password")!!))
+            val login = exchange(HttpMethod.POST, "/api/auth/login",
+                """{"username":"$name","password":"test-only-password","rememberMe":false}""")
+            val session = cookieValues(login, "JSESSIONID")
+            assertThat(exchange(HttpMethod.GET, "/api/admin/users", cookies=session).statusCode.value()).isEqualTo(200)
+            if (delete) users.delete(account) else { account.role="PARENT"; users.save(account) }
+            assertThat(exchange(HttpMethod.GET, "/api/admin/users", cookies=session).statusCode.value()).isEqualTo(401)
+        }
+    }
+
+    @Test fun `administrator password reset revokes sessions and persistent login tokens`() {
+        val name = "reset-test-${java.util.UUID.randomUUID()}"
+        val account = users.save(de.schoolagent.domain.model.AppUser(name=name, displayName="Example", role="PARENT",
+            passwordHash=encoder.encode("test-only-password")!!))
+        val login = exchange(HttpMethod.POST, "/api/auth/login",
+            """{"username":"$name","password":"test-only-password","rememberMe":true}""")
+        val session = cookieValues(login, "JSESSIONID"); val remember = cookieValues(login, "schoolagent-rememberme")
+        assertThat(remember).isNotEmpty()
+        val headers = HttpHeaders().apply { setBasicAuth("morgan", "test-only-password"); contentType=MediaType.APPLICATION_JSON }
+        rest.exchange(url("/api/admin/users/${account.id}"), HttpMethod.PUT,
+            HttpEntity("""{"password":"new-test-password"}""", headers), String::class.java)
+        assertThat(exchange(HttpMethod.GET, "/api/auth/me", cookies=session).statusCode.value()).isEqualTo(401)
+        assertThat(exchange(HttpMethod.GET, "/api/auth/me", cookies=remember).statusCode.value()).isEqualTo(401)
+    }
+
 }

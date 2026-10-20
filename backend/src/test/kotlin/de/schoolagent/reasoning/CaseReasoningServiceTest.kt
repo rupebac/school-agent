@@ -605,4 +605,19 @@ class CaseReasoningServiceTest {
         assertThat(report.importanceScore).isEqualTo(4)
         assertThat(general.importanceScore).isEqualTo(1)
     }
+    @Test fun `distinct exams on the same date are both preserved`() {
+        router = routerWith("""{"relevance":"INFO","score":2,"summary":"Two assessments.","actions":[],
+            "events":[{"title":"Mathematics exam","date":"15.10.2026","type":"EXAM"},
+                      {"title":"English exam","date":"15.10.2026","type":"EXAM"}],"requirements":[]}""")
+        service = svc()
+        val c = readyCase()
+        every { caseRepo.findById(c.id) } returns Optional.of(c)
+        every { evidenceRepo.findByCaseId(c.id) } returns emptyList()
+        every { sourceRepo.findByCaseId(any()) } returns emptyList()
+        every { actionRepo.findByCaseId(c.id) } returns emptyList()
+        every { eventRepo.findByCaseId(c.id) } returns emptyList()
+        service.reason(c.id)
+        assertThat(savedEvents.map { it.title }).containsExactly("Mathematics exam", "English exam")
+    }
+
 }

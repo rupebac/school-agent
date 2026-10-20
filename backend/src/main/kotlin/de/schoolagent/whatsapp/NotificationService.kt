@@ -12,6 +12,7 @@ import de.schoolagent.domain.repo.ParentActionRepository
 import de.schoolagent.domain.repo.SchoolCaseRepository
 import de.schoolagent.domain.repo.SchoolEventRepository
 import de.schoolagent.i18n.UserLanguage
+import de.schoolagent.diagnostics.*
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -37,6 +38,7 @@ class NotificationService(
     private val inbox: de.schoolagent.domain.service.FamilyInboxService,
     private val copy: de.schoolagent.inbox.InboxCopyService,
     private val outbox: WhatsappOutbox,
+    private val diagnostics: IntegrationDiagnostics? = null,
 ) {
 
     private val berlin: ZoneId = ZoneId.of("Europe/Berlin")
@@ -49,19 +51,29 @@ class NotificationService(
         if (caseEntity.suppressInitialNotification) {
             caseEntity.suppressInitialNotification = false
             caseRepo.save(caseEntity)
+            trace(caseEntity, DiagnosticOutcome.QUIET_IMPORT)
             return
         }
-        if (caseEntity.muted || caseEntity.isClosed()) return
+        if (caseEntity.muted || caseEntity.isClosed()) {
+            trace(caseEntity, if (caseEntity.muted) DiagnosticOutcome.MUTED else DiagnosticOutcome.CLOSED)
+            return
+        }
         dispatch(caseEntity)
     }
 
     /** School timetable changes use the existing information template, including a closed cancelled case. */
     @Transactional
     fun notifySchoolChange(caseEntity: SchoolCase, change: String, details: String) {
-        if (caseEntity.suppressInitialNotification || caseEntity.muted || caseEntity.importanceScore < 2) return
+        if (caseEntity.suppressInitialNotification || caseEntity.muted || caseEntity.importanceScore < 2) {
+            trace(caseEntity, when { caseEntity.suppressInitialNotification -> DiagnosticOutcome.QUIET_IMPORT
+                caseEntity.muted -> DiagnosticOutcome.MUTED; else -> DiagnosticOutcome.LOW_PRIORITY })
+            return
+        }
         val child = caseEntity.childId?.let { kids.findById(it).orElse(null)?.name } ?: "Family"
         val baseKey = "school-change:${caseEntity.id}:${inbox.revision(caseEntity.id)}"
-        for ((user, _) in recipientsFor(caseEntity)) {
+        val recipients = recipientsFor(caseEntity)
+        if (recipients.isEmpty()) trace(caseEntity, DiagnosticOutcome.NO_RECIPIENTS)
+        for ((user, _) in recipients) {
             val messages = WaTemplates.messages(WaTemplates.Kind.INFO, UserLanguage.of(user.language), child,
                 "$change: ${caseEntity.title}", details, emptyList(), "cases/${caseEntity.id}")
             messages.forEachIndexed { index, message -> outbox.enqueue(user.id, "$baseKey:${user.id}:$index", message,
@@ -73,14 +85,18 @@ class NotificationService(
         val actions = actionRepo.findByCaseId(caseEntity.id)
             .filter { it.status in listOf(ActionStatus.OPEN, ActionStatus.ASSIGNED, ActionStatus.IN_PROGRESS, ActionStatus.OVERDUE) }
         val score = de.schoolagent.domain.enums.clampImportanceScore(caseEntity.importanceScore)
-        if (score < 2) return
+        if (score < 2) { trace(caseEntity, DiagnosticOutcome.LOW_PRIORITY); return }
         val baseKey = "decision:${caseEntity.id}:${inbox.revision(caseEntity.id)}:${caseEntity.isInfo()}"
 
-        val targets = recipientsFor(caseEntity).filter { (user, _) ->
+        val recipients = recipientsFor(caseEntity)
+        val targets = recipients.filter { (user, _) ->
             !notificationRepo.existsByDedupKey("$baseKey:${user.id}") &&
                 !notificationRepo.existsByDedupKeyStartingWith("$baseKey:${user.id}:")
         }
-        if (targets.isEmpty()) return
+        if (targets.isEmpty()) {
+            trace(caseEntity, if (recipients.isEmpty()) DiagnosticOutcome.NO_RECIPIENTS else DiagnosticOutcome.DUPLICATE)
+            return
+        }
         val now = clock.instant()
         val realEvents = eventRepo.findByCaseId(caseEntity.id).filter {
             it.status in setOf(EventStatus.PLANNED, EventStatus.CONFIRMED) &&
@@ -95,7 +111,10 @@ class NotificationService(
                 local.toLocalDate().plusDays(1).atStartOfDay(berlin).toInstant() else e.startTime
         }
         val event = realEvents.filter { cutoff(it).isAfter(now) }.minByOrNull { it.startTime }
-        if (caseEntity.isInfo() && realEvents.isNotEmpty() && event == null) return
+        if (caseEntity.isInfo() && realEvents.isNotEmpty() && event == null) {
+            trace(caseEntity, DiagnosticOutcome.EXPIRED)
+            return
+        }
         val expiresAt = event?.let(::cutoff)?.coerceAtMost(now.plus(java.time.Duration.ofDays(3)))
             ?: now.plus(java.time.Duration.ofDays(3))
         var projection = copy.current(listOf(caseEntity))[caseEntity.id]
@@ -154,6 +173,9 @@ class NotificationService(
             }
         }
     }
+
+    private fun trace(c: SchoolCase, outcome: DiagnosticOutcome) = diagnostics?.record(
+        DiagnosticTrace(DiagnosticStage.NOTICE, outcome, childId = c.childId, caseId = c.id))
 
     /** Parents assigned to this kid (admin sees all kids → all accounts), if they want instant pings. */
     private fun recipientsFor(caseEntity: SchoolCase): List<Pair<de.schoolagent.domain.model.AppUser, String>> {

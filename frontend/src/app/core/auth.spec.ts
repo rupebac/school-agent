@@ -40,4 +40,24 @@ describe('Auth (session)', () => {
     me.flush({ name: 'morgan', displayName: 'Morgan', role: 'ADMIN', whatsappNumber: null, language: 'es' });
     expect(auth.me()?.name).toBe('morgan');
   });
+
+  it('does not report login success before the account has loaded', () => {
+    let completed = false;
+    auth.login('morgan', 'pw', false).subscribe(() => { completed = true; });
+    http.expectOne('/api/auth/login').flush('');
+    expect(completed).toBe(false);
+    http.expectOne('/api/auth/me').flush({ name: 'morgan', displayName: 'Morgan', role: 'ADMIN', language: 'en' });
+    expect(completed).toBe(true);
+    expect(auth.isAdmin).toBe(true);
+  });
+
+  it('reports account loading errors to the login subscriber', () => {
+    let failed = false;
+    auth.login('morgan', 'pw', false).subscribe({ error: () => { failed = true; } });
+    http.expectOne('/api/auth/login').flush('');
+    http.expectOne('/api/auth/me').flush({}, { status: 500, statusText: 'Failed' });
+    expect(failed).toBe(true);
+    expect(auth.me()).toBeNull();
+  });
+
 });

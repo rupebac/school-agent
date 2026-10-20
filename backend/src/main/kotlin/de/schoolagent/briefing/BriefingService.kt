@@ -1,6 +1,7 @@
 package de.schoolagent.briefing
 
 import de.schoolagent.calendar.SchoolCalendarService
+import de.schoolagent.diagnostics.*
 import de.schoolagent.domain.enums.ActionStatus
 import de.schoolagent.domain.enums.EventStatus
 import de.schoolagent.domain.enums.RequirementStatus
@@ -36,6 +37,7 @@ class BriefingService(
     private val whatsapp: de.schoolagent.whatsapp.WhatsAppConfigService,
     private val copy: de.schoolagent.inbox.InboxCopyService? = null,
     private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null,
+    private val diagnostics: IntegrationDiagnostics? = null,
 ) {
 
     private fun currentCases(): List<SchoolCase> {
@@ -216,11 +218,27 @@ class BriefingService(
         val allowed = access.accessibleKidIds(user).toSet()
         val end = if (weekly) start.plusDays(6) else start
         val previousStart = start.minusDays(7)
-        val activeCases = currentCases().filter { !it.isClosed() && !it.muted &&
+        val allCases = caseRepo.findAll()
+        val visibility = relevance?.current(allCases).orEmpty()
+        val activeCases = allCases.filter { visibility[it.id]?.archived != true && !it.isClosed() && !it.muted &&
             it.childId in allowed && (weekly || it.importanceScore >= DAILY_MIN_SCORE) }.associateBy { it.id }
         val projections = copy?.current(activeCases.values.toList()).orEmpty()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(start.atStartOfDay(berlin).toInstant(),
-            end.plusDays(1).atStartOfDay(berlin).toInstant()).filter {
+            end.plusDays(1).atStartOfDay(berlin).toInstant()).also { candidates ->
+            val byId = allCases.associateBy { it.id }
+            candidates.filter { it.eventType == de.schoolagent.domain.enums.EventType.EXAM }.forEach { exam ->
+                val c = byId[exam.caseId]
+                if (c?.childId in allowed) diagnostics?.record(DiagnosticTrace(DiagnosticStage.PLAN_EXAM, when {
+                    exam.startTime.atZone(berlin).toLocalDate() !in start..end -> DiagnosticOutcome.AFTER_WINDOW
+                    exam.status == EventStatus.CANCELLED -> DiagnosticOutcome.CANCELLED
+                    visibility[c?.id]?.archived == true -> DiagnosticOutcome.ARCHIVED
+                    c?.isClosed() == true -> DiagnosticOutcome.CLOSED
+                    c?.muted == true -> DiagnosticOutcome.MUTED
+                    !weekly && (c?.importanceScore ?: 0) < DAILY_MIN_SCORE -> DiagnosticOutcome.LOW_PRIORITY
+                    else -> DiagnosticOutcome.AVAILABLE
+                }, childId = c?.childId, accountId = access.account(user)?.id, caseId = exam.caseId, period = start, weekly = weekly))
+            }
+        }.filter {
             it.status != EventStatus.CANCELLED && it.caseId in activeCases &&
             it.eventType !in setOf(de.schoolagent.domain.enums.EventType.BRING_ITEM, de.schoolagent.domain.enums.EventType.DEADLINE, de.schoolagent.domain.enums.EventType.PAYMENT, de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)
         }

@@ -22,6 +22,10 @@ describe('I18n', () => {
     expect(i18n.t('dash.nOpen', { n: 3 })).toBe('3 abiertas');
   });
 
+  it('provides Spanish translations for every English key', () => {
+    for (const key of Object.keys(EN)) expect(ES[key as keyof typeof ES], key).toBeDefined();
+  });
+
   it('never lets Spanish define unknown keys', () => {
     for (const key of Object.keys(ES)) {
       expect(EN[key], key).toBeDefined();

@@ -106,7 +106,8 @@ class ActionService(
             ),
         )
         recordChange(saved, ChangeType.ADD, before = emptyMap(), after = mapOf("title" to trimmed))
-        audit(caseId, actor, "ACTION_CREATED", """{"actionId":"${saved.id}","title":"${trimmed.replace("\"", "'")}"}""")
+        audit(caseId, actor, "ACTION_CREATED", com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(
+            mapOf("actionId" to saved.id.toString(), "title" to trimmed)))
         if (caseEntity.status == CaseStatus.INFORMATION_ONLY &&
             CaseStateMachine.canTransition(caseEntity.status, CaseStatus.ACTION_REQUIRED)
         ) {
@@ -180,8 +181,8 @@ class ActionService(
                 changeType = type,
                 targetType = ChangeTargetType.ACTION,
                 targetId = action.id,
-                beforeJson = before.entries.joinToString(",", "{", "}") { "\"${it.key}\":\"${it.value}\"" },
-                afterJson = after.entries.joinToString(",", "{", "}") { "\"${it.key}\":\"${it.value}\"" },
+                beforeJson = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(before),
+                afterJson = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(after),
                 createdAt = clock.instant(),
             ),
         )

@@ -30,6 +30,7 @@ import javax.sql.DataSource
 @EnableWebSecurity
 class SecurityConfig(
     private val dataSource: DataSource,
+    private val users: de.schoolagent.domain.repo.AppUserRepository,
 ) {
 
     @Bean
@@ -70,6 +71,7 @@ class SecurityConfig(
                     .requestMatchers("/api/auth/login", "/api/auth/logout").permitAll()
                     .requestMatchers("/api/whatsapp/webhook/**").permitAll()
                     .requestMatchers("/api/google/callback").permitAll()
+                    .requestMatchers("/api/whatsapp/**").hasRole("ADMIN")
                     .requestMatchers("/api/admin/**", "/api/reason/pending", "/api/reason/fallback-cases", "/api/reason/scores").hasRole("ADMIN")
                     .anyRequest().authenticated()
             }
@@ -85,6 +87,7 @@ class SecurityConfig(
                     }
                 }
             }
+        http.addFilterBefore(CurrentAccountFilter(users), org.springframework.security.web.access.intercept.AuthorizationFilter::class.java)
         http.addFilterAfter(CsrfCookieFilter(), org.springframework.security.web.authentication.www.BasicAuthenticationFilter::class.java)
         return http.build()
     }

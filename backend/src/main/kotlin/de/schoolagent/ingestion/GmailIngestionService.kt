@@ -43,13 +43,13 @@ class GmailIngestionService(
     private val deliveries: de.schoolagent.email.EmailDeliveryRepository,
     private val emailSettings: de.schoolagent.email.SchoolEmailSettings,
     private val cases: de.schoolagent.domain.repo.SchoolCaseRepository,
+    private val transactions: org.springframework.transaction.PlatformTransactionManager? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     data class PollResult(val inspected: Int, val ingested: Int, val attachments: Int)
 
-    @Transactional
     fun pollOnce(childId: java.util.UUID? = null): PollResult {
         try {
             (gmail as? de.schoolagent.connectors.gmail.GmailRestClient)?.withChild(childId)
@@ -60,7 +60,7 @@ class GmailIngestionService(
             health.failure(ConnectorType.GMAIL, e.message ?: "gmail failure")
             throw e
         } catch (e: Exception) {
-            health.failure(ConnectorType.GMAIL, "unexpected: ${e.message}")
+            health.failure(ConnectorType.GMAIL, "unexpected: ${e.javaClass.simpleName}")
             throw e
         } finally {
             (gmail as? de.schoolagent.connectors.gmail.GmailRestClient)?.withChild(null)
@@ -68,24 +68,30 @@ class GmailIngestionService(
     }
 
     private fun doPoll(childId: java.util.UUID?): PollResult {
-        childId?.let { childRepo.lockById(it) }
-        val knownDeliveries = childId?.let { deliveries.findByChildId(it).toMutableList() } ?: mutableListOf()
-        val ids = gmail.listMessageIds(MAX_PER_POLL)
+        val pageKey = childId?.let { "gmail.$it.page" } ?: "gmail.page"
+        val pageToken = settings.findById(pageKey).orElse(null)?.valueJson?.takeIf { it.isNotBlank() }
+        val page = try { gmail.listMessagePage(MAX_PER_POLL, pageToken) }
+        catch (e: GmailApiException) {
+            if (pageToken != null && e.statusCode == 400) settings.deleteById(pageKey)
+            throw e
+        }
+        val ids = page.ids.take(MAX_PER_POLL)
         val cursorKey = childId?.let { "gmail.$it.cursor.internalDate" } ?: CURSOR_KEY
         val cursor = settings.findById(cursorKey).orElse(null)?.valueJson?.toLongOrNull() ?: 0L
         var ingested = 0
         var attachmentCount = 0
         var newest = cursor
 
-        for (id in ids) {
+        for (id in ids) inTransaction {
+            childId?.let { childRepo.lockById(it) }
             val scopedId = childId?.let { "$it:$id" } ?: id
             val dedupKey = DedupKeys.source(SourceType.EMAIL, scopedId)
-            if (knownDeliveries.any { it.gmailId == id }) continue
-            if (sourceRepo.existsByDedupKey(dedupKey)) continue
+            if (childId != null && deliveries.existsByChildIdAndGmailId(childId, id)) return@inTransaction
+            if (sourceRepo.existsByDedupKey(dedupKey)) return@inTransaction
             if (childId != null) {
                 val legacy = sourceRepo.findByDedupKey(DedupKeys.source(SourceType.EMAIL, id))
                 if (legacy?.caseId != null && cases.findById(legacy.caseId!!).orElse(null)?.childId == childId) {
-                    legacy.dedupKey = dedupKey; sourceRepo.save(legacy); continue
+                    legacy.dedupKey = dedupKey; sourceRepo.save(legacy); return@inTransaction
                 }
             }
             val meta = gmail.fetchMetadata(id)
@@ -93,15 +99,15 @@ class GmailIngestionService(
 
             val raw = gmail.fetchRaw(id)
             val mail = de.schoolagent.email.EmailContent.read(raw)
-            if (childId != null && !emailSettings.accepts(childId, mail)) continue
+            if (childId != null && !emailSettings.accepts(childId, mail)) return@inTransaction
             val contentHash = documents.put(raw)
             val attachments = gmail.fetchAttachments(id)
             val attachmentsStored = attachments.map { it to documents.put(it.bytes) }
 
             val fingerprint = mail.fingerprint(attachmentsStored.map { it.second })
-            val duplicate = knownDeliveries.firstOrNull {
-                (mail.messageId != null && it.originalMessageId == mail.messageId) ||
-                    (fingerprint != null && it.fingerprint == fingerprint)
+            val duplicate = childId?.let { kid ->
+                mail.messageId?.let { deliveries.findFirstByChildIdAndOriginalMessageId(kid, it) }
+                    ?: fingerprint?.let { deliveries.findFirstByChildIdAndFingerprint(kid, it) }
             }
             fun recordDelivery(sourceId: java.util.UUID) {
                 if (childId == null) return
@@ -111,15 +117,15 @@ class GmailIngestionService(
                     referenceIds = mail.references.joinToString("\n"),
                     forwardedBy = if (mail.forwarded) meta.from else null,
                     receivedAt = Instant.ofEpochMilli(meta.internalDateMs.coerceAtLeast(0)))
-                deliveries.save(delivery); knownDeliveries.add(delivery)
+                deliveries.save(delivery)
             }
-            if (duplicate != null) { recordDelivery(duplicate.sourceId); continue }
+            if (duplicate != null) { recordDelivery(duplicate.sourceId); return@inTransaction }
             // Message-ID references work even when a reply arrives before its parent.
             // Never group unrelated notices merely because they share a subject.
-            val related = knownDeliveries.firstOrNull {
-                it.originalMessageId in mail.references ||
-                    (mail.messageId != null && mail.messageId in it.referenceIds.lines()) ||
-                    (!mail.forwarded && meta.threadId != null && it.gmailThreadId == meta.threadId)
+            val related = childId?.let { kid ->
+                mail.references.takeIf { it.isNotEmpty() }?.let { deliveries.findFirstByChildIdAndOriginalMessageIdIn(kid, it) }
+                    ?: mail.messageId?.let { deliveries.findReferencing(kid, it) }
+                    ?: meta.threadId?.takeIf { !mail.forwarded }?.let { deliveries.findFirstByChildIdAndGmailThreadId(kid, it) }
             }
             val existing = related?.sourceId?.let { sourceRepo.findById(it).orElse(null)?.caseId }
                 ?.let { cases.lockById(it) }?.takeIf { it.childId == childId }
@@ -154,11 +160,21 @@ class GmailIngestionService(
             ingested++
         }
 
+        // Advance only after every message in this page has committed. A crash replays safely.
+        settings.save(Setting(key = pageKey, valueJson = page.nextPageToken ?: "", updatedAt = clock.instant()))
         if (newest > cursor) {
             settings.save(Setting(key = cursorKey, valueJson = newest.toString(), updatedAt = clock.instant()))
         }
         log.info("gmail poll: {} inspected, {} ingested, {} attachments", ids.size, ingested, attachmentCount)
         return PollResult(inspected = ids.size, ingested = ingested, attachments = attachmentCount)
+    }
+
+    private fun inTransaction(block: () -> Unit) {
+        val manager = transactions
+        if (manager == null) block() else org.springframework.transaction.support.TransactionTemplate(manager).apply {
+            propagationBehavior = org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW
+            timeout = 120
+        }.executeWithoutResult { block() }
     }
 
     private fun storeAttachmentSources(

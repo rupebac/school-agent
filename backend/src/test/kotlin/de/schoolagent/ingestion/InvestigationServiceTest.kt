@@ -199,4 +199,33 @@ class InvestigationServiceTest {
         service.investigate(caseId)
         verify { formRepo.save(match { it.url == "https://school.example/submit" && it.pageUrl == "https://school.example/forms/registration" }) }
     }
+
+    @Test fun `browser evidence points to the persisted source`() {
+        val mail = "From: school@example.org\r\nContent-Type: text/plain\r\n\r\nhttps://school.example/anmeldung"
+        val ref = store.put(mail.toByteArray()); storedDocs[ref] = mail.toByteArray()
+        every { crawler.fetch(any()) } throws de.schoolagent.crawler.CrawlException("HTTP unavailable")
+        every { worker.render(any()) } returns de.schoolagent.crawler.BrowserWorkerClient.RenderedPage(
+            "https://school.example/anmeldung", "Registration", "Deadline 30.09.2026", emptyList())
+        service.investigate(caseId)
+        val source = savedSources.single { it.sourceType == SourceType.WEBPAGE_JS }
+        assertThat(savedEvidence.filter { it.subject == "Datum: 30.09.2026" }.map { it.sourceId }).containsExactly(source.id)
+    }
+
+    @Test fun `canonicalization preserves percent encoded query values`() {
+        assertThat(de.schoolagent.crawler.Links.canonicalize("https://school.example/form?token=a%2Fb%3D&x=a+b&utm_source=mail#top"))
+            .isEqualTo("https://school.example/form?token=a%2Fb%3D&x=a+b")
+    }
+
+
+    @Test fun `a shared web link contributes evidence to each case independently`() {
+        val mail = "From: school@example.org\r\nContent-Type: text/plain\r\n\r\nhttps://school.example/anmeldung"
+        val ref = store.put(mail.toByteArray()); storedDocs[ref] = mail.toByteArray()
+        every { crawler.fetch(any()) } returns FetchedPage("https://school.example/anmeldung", "https://school.example/anmeldung",
+            "text/html", "<p>Deadline 30.09.2026</p>".toByteArray())
+        val second = UUID.randomUUID()
+        service.investigate(caseId); service.investigate(second)
+        assertThat(savedSources.map { it.caseId }).containsExactly(caseId, second)
+        assertThat(savedEvidence.filter { it.subject == "Datum: 30.09.2026" }.map { it.caseId }).containsExactly(caseId, second)
+    }
+
 }

@@ -39,12 +39,14 @@ class GoogleOAuthServiceTest {
     private lateinit var vault: FakeVault
     private lateinit var tokens: FakeTokenClient
     private lateinit var oauth: GoogleOAuthService
+    private lateinit var config: GoogleClientConfigService
 
     @BeforeEach
     fun setUp() {
         vault = FakeVault()
         tokens = FakeTokenClient()
-        oauth = GoogleOAuthService(props, vault, clock, tokens)
+        config = GoogleClientConfigService(props, vault)
+        oauth = GoogleOAuthService(props, vault, clock, tokens, config)
     }
 
     @Test
@@ -105,4 +107,100 @@ class GoogleOAuthServiceTest {
         assertThat(oauth.revoke()).isTrue()
         assertThat(oauth.hasRefreshToken()).isFalse()
     }
+    @Test
+    fun `environment fallback and saved status never serialize the secret`() {
+        assertThat(config.status().source).isEqualTo("environment")
+        assertThat(config.status().clientId).isEqualTo(props.clientId)
+        assertThat(mapper.writeValueAsString(config.status())).doesNotContain(props.clientSecret)
+        val saved = config.save(GoogleClientConfigService.Update("example.apps.googleusercontent.com", "replacement-secret", true))
+        assertThat(saved.source).isEqualTo("settings")
+        assertThat(mapper.writeValueAsString(saved)).doesNotContain("replacement-secret")
+        assertThat(oauth.authorizationUrl("morgan")).contains("client_id=example.apps.googleusercontent.com")
+        val restarted = GoogleClientConfigService(props, vault)
+        assertThat(restarted.status()).isEqualTo(saved)
+    }
+
+    @Test
+    fun `changing client needs confirmation and its own secret without modifying existing configuration`() {
+        val before = config.status()
+        assertThatThrownBy { config.save(GoogleClientConfigService.Update("example.apps.googleusercontent.com", "new-secret")) }
+            .isInstanceOf(org.springframework.web.server.ResponseStatusException::class.java)
+        assertThatThrownBy { config.save(GoogleClientConfigService.Update("example.apps.googleusercontent.com", null, true)) }
+            .isInstanceOf(org.springframework.web.server.ResponseStatusException::class.java)
+        assertThat(config.status()).isEqualTo(before)
+    }
+
+    @Test
+    fun `blank secret preserves current client connection and secret rotation clears cached access`() {
+        props.clientId = "example.apps.googleusercontent.com"
+        vault.store(GoogleOAuthService.LEGACY_REFRESH_KEY, "existing-refresh")
+        assertThat(oauth.accessToken()).isEqualTo("acc-1")
+        config.save(GoogleClientConfigService.Update(props.clientId))
+        assertThat(oauth.hasRefreshToken()).isTrue()
+        assertThat(oauth.accessToken()).isEqualTo("acc-1")
+        assertThat(tokens.calls).hasSize(1)
+        config.save(GoogleClientConfigService.Update(props.clientId, "rotated-secret"))
+        oauth.accessToken()
+        assertThat(tokens.calls).hasSize(2)
+        assertThat(tokens.calls.last()["client_secret"]).isEqualTo("rotated-secret")
+        assertThat(tokens.calls.last()["refresh_token"]).isEqualTo("existing-refresh")
+    }
+
+    @Test
+    fun `changing client invalidates cached and stored connections for every child including legacy`() {
+        val kid = java.util.UUID.randomUUID()
+        vault.store(GoogleOAuthService.LEGACY_REFRESH_KEY, "legacy-refresh")
+        vault.store(GoogleOAuthService.refreshKey(kid), "child-refresh")
+        oauth.accessToken(kid)
+        config.save(GoogleClientConfigService.Update("new.apps.googleusercontent.com", "new-secret", true))
+        assertThat(oauth.hasRefreshToken()).isFalse()
+        assertThat(oauth.hasRefreshToken(kid)).isFalse()
+        assertThatThrownBy { oauth.accessToken(kid) }.isInstanceOf(GoogleAuthException::class.java)
+        assertThat(tokens.calls).hasSize(1)
+        val state = oauth.authorizationUrl("morgan", kid).substringAfter("state=").substringBefore('&')
+        oauth.handleCallback("new-code", state)
+        assertThat(oauth.hasRefreshToken(kid)).isTrue()
+        assertThat(oauth.hasRefreshToken()).isFalse()
+        assertThat(tokens.calls.last()["client_id"]).isEqualTo("new.apps.googleusercontent.com")
+        val restarted = GoogleOAuthService(props, vault, clock, tokens, GoogleClientConfigService(props, vault))
+        assertThat(restarted.hasRefreshToken(kid)).isTrue()
+        assertThat(restarted.revoke(kid)).isTrue()
+        assertThat(restarted.hasRefreshToken(kid)).isFalse()
+    }
+
+    @Test
+    fun `pending consent cannot finish after client or secret changes`() {
+        props.clientId = "example.apps.googleusercontent.com"
+        val state = oauth.authorizationUrl("morgan").substringAfter("state=").substringBefore('&')
+        config.save(GoogleClientConfigService.Update(props.clientId, "rotated-secret"))
+        assertThatThrownBy { oauth.handleCallback("code", state) }.isInstanceOf(GoogleAuthException::class.java)
+        assertThat(tokens.calls).isEmpty()
+        assertThat(oauth.hasRefreshToken()).isFalse()
+    }
+
+    @Test
+    fun `fresh setup validates input and does not reflect rejected values`() {
+        props.clientId = ""; props.clientSecret = ""
+        assertThat(config.status().source).isEqualTo("none")
+        assertThat(oauth.clientConfigured()).isFalse()
+        assertThatThrownBy { config.save(GoogleClientConfigService.Update("invalid-private-value", "secret")) }
+            .hasMessageNotContaining("invalid-private-value").hasMessageNotContaining("secret")
+        assertThatThrownBy { config.save(GoogleClientConfigService.Update("example.apps.googleusercontent.com", "bad secret")) }
+            .hasMessageNotContaining("bad secret")
+        config.save(GoogleClientConfigService.Update("example.apps.googleusercontent.com", "new-secret"))
+        assertThat(oauth.clientConfigured()).isTrue()
+        assertThat(oauth.hasRefreshToken()).isFalse()
+    }
+
+    @Test
+    fun `switching back to a previous client cannot revive its abandoned tokens`() {
+        props.clientId = "original.apps.googleusercontent.com"
+        vault.store(GoogleOAuthService.LEGACY_REFRESH_KEY, "old-refresh")
+        config.save(GoogleClientConfigService.Update("replacement.apps.googleusercontent.com", "new-secret", true))
+        config.save(GoogleClientConfigService.Update(props.clientId, props.clientSecret, true))
+        assertThat(oauth.hasRefreshToken()).isFalse()
+        assertThatThrownBy { oauth.accessToken() }.isInstanceOf(GoogleAuthException::class.java)
+        assertThat(tokens.calls).isEmpty()
+    }
+
 }

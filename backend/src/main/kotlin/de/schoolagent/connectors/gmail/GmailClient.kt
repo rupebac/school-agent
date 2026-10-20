@@ -13,10 +13,13 @@ import java.util.Base64
 /** What ingestion needs from a mailbox — one implementation today, trivially fakeable. */
 interface GmailClient {
     fun listMessageIds(maxResults: Int): List<String>
+    fun listMessagePage(maxResults: Int, pageToken: String? = null): MessageIdPage = MessageIdPage(listMessageIds(maxResults).take(maxResults), null)
     fun fetchMetadata(id: String): MessageMetadata
     fun fetchRaw(id: String): ByteArray
     fun fetchAttachments(id: String): List<AttachmentData>
 }
+
+data class MessageIdPage(val ids: List<String>, val nextPageToken: String?)
 
 data class MessageMetadata(
     val from: String?,
@@ -31,7 +34,7 @@ data class AttachmentData(
     val bytes: ByteArray,
 )
 
-class GmailApiException(message: String, val authRelated: Boolean) : RuntimeException(message)
+class GmailApiException(message: String, val authRelated: Boolean, val statusCode: Int? = null) : RuntimeException(message)
 
 /**
  * Thin REST client for the Gmail API (no heavyweight SDK; Bearer from the
@@ -51,21 +54,16 @@ class GmailRestClient(
 
     fun withChild(childId: java.util.UUID?) { tokenChildId.set(childId) }
 
-    override fun listMessageIds(maxResults: Int): List<String> {
-        val ids = linkedSetOf<String>()
-        var page: String? = null
-        val visited = mutableSetOf<String>()
-        do {
-            val url = org.springframework.web.util.UriComponentsBuilder.fromUriString("$base/messages")
-                .queryParam("maxResults", maxResults.coerceIn(1, 500))
-                .queryParam("q", props.gmailQuery)
-            page?.let { url.queryParam("pageToken", it) }
-            val node = get(url.build().encode().toUriString())
-            ids += node.path("messages").map { it.path("id").asText() }
-            page = node.path("nextPageToken").asText(null)?.takeIf { it.isNotBlank() }
-            if (page != null && !visited.add(page)) throw GmailApiException("Repeated Gmail page token", false)
-        } while (page != null)
-        return ids.toList()
+    override fun listMessageIds(maxResults: Int): List<String> = listMessagePage(maxResults).ids
+
+    override fun listMessagePage(maxResults: Int, pageToken: String?): MessageIdPage {
+        val url = org.springframework.web.util.UriComponentsBuilder.fromUriString("$base/messages")
+            .queryParam("maxResults", maxResults.coerceIn(1, 100)).queryParam("q", props.gmailQuery)
+        pageToken?.let { url.queryParam("pageToken", it) }
+        val node = get(url.build().encode().toUriString())
+        val next = node.path("nextPageToken").asText(null)?.takeIf { it.isNotBlank() }
+        if (next != null && next == pageToken) throw GmailApiException("Repeated Gmail page token", false)
+        return MessageIdPage(node.path("messages").take(maxResults).map { it.path("id").asText() }, next)
     }
 
     fun mailbox(childId: java.util.UUID?): String? {
@@ -94,7 +92,10 @@ class GmailRestClient(
 
     override fun fetchAttachments(id: String): List<AttachmentData> {
         val full = get("$base/messages/$id?format=full")
-        return full.path("payload").findParts()
+        var total = 0L
+        return full.path("payload").findParts().also {
+            if (it.count { part -> part.path("filename").asText().isNotBlank() } > 30) throw GmailApiException("Too many email attachments", false)
+        }
             .mapNotNull { part ->
                 val filename = part.path("filename").asText("")
                 if (filename.isBlank()) return@mapNotNull null
@@ -102,19 +103,23 @@ class GmailRestClient(
                 val data = if (attachmentId != null) get("$base/messages/$id/attachments/$attachmentId").path("data").asText()
                     else part.path("body").path("data").asText("")
                 if (data.isBlank()) return@mapNotNull null
+                val bytes = b64UrlDecode(data)
+                total += bytes.size
+                if (total > 25 * 1024 * 1024) throw GmailApiException("Email attachments exceed size limit", false)
                 AttachmentData(
                     filename = filename,
                     mimeType = part.path("mimeType").asText("application/octet-stream"),
-                    bytes = b64UrlDecode(data),
+                    bytes = bytes,
                 )
             }
     }
 
     private fun JsonNode.findParts(): List<JsonNode> {
         val result = mutableListOf<JsonNode>()
-        fun walk(node: JsonNode) {
+        fun walk(node: JsonNode, depth: Int = 0) {
+            if (depth > 32 || result.size >= 1000) throw GmailApiException("Email structure exceeds limit", false)
             result.add(node)
-            node.path("parts").forEach { walk(it) }
+            node.path("parts").forEach { walk(it, depth + 1) }
         }
         walk(this)
         return result
@@ -131,11 +136,15 @@ class GmailRestClient(
             com.fasterxml.jackson.databind.ObjectMapper().readTree(rest.exchange(java.net.URI.create(url), HttpMethod.GET, HttpEntity<Void>(headers), String::class.java).body!!)
         } catch (e: org.springframework.web.client.HttpClientErrorException.Unauthorized) {
             throw GmailApiException("Gmail API 401", authRelated = true)
+        } catch (e: org.springframework.web.client.HttpStatusCodeException) {
+            throw GmailApiException("Gmail API HTTP ${e.statusCode.value()}", e.statusCode.value() in setOf(401, 403), e.statusCode.value())
         } catch (e: org.springframework.web.client.RestClientException) {
-            throw GmailApiException("Gmail API unreachable: ${e.message}", authRelated = false)
+            throw GmailApiException("Gmail API request failed (${e.javaClass.simpleName})", authRelated = false)
         }
     }
 
-    private fun b64UrlDecode(value: String): ByteArray =
-        Base64.getUrlDecoder().decode(value.padEnd(value.length + (4 - value.length % 4) % 4, '='))
+    private fun b64UrlDecode(value: String): ByteArray {
+        if (value.length > 12 * 1024 * 1024) throw GmailApiException("Email part exceeds size limit", false)
+        return Base64.getUrlDecoder().decode(value.padEnd(value.length + (4 - value.length % 4) % 4, '='))
+    }
 }

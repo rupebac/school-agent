@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import de.schoolagent.ai.JsonCompletions
 import de.schoolagent.ai.ModelRouter
 import de.schoolagent.domain.enums.*
+import de.schoolagent.diagnostics.*
 import de.schoolagent.domain.model.Notification
 import de.schoolagent.domain.model.WhatsappReceipt
 import de.schoolagent.domain.repo.*
@@ -23,7 +24,8 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
                      private val client: WhatsappClient, private val model: ModelRouter,
                      private val health: HealthTracker, private val clock: Clock,
                      private val inbox: de.schoolagent.domain.service.FamilyInboxService,
-                     private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null) {
+                     private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null,
+                     private val diagnostics: IntegrationDiagnostics? = null) {
     private val json = ObjectMapper()
     private val running = java.util.concurrent.atomic.AtomicBoolean()
     private val executor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
@@ -35,12 +37,18 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
     fun enqueue(recipient: UUID, key: String, message: WaTemplates.Message, caseId: UUID? = null,
                 level: NotificationLevel = NotificationLevel.DIGEST, lifetime: Duration = Duration.ofHours(12),
                 expiresAt: Instant? = null) {
-        if (rows.existsByDedupKey(key)) return
+        if (rows.existsByDedupKey(key)) {
+            diagnostics?.record(DiagnosticTrace(DiagnosticStage.WHATSAPP, DiagnosticOutcome.DUPLICATE,
+                accountId = recipient, caseId = caseId))
+            return
+        }
         val now = clock.instant()
         rows.save(Notification(caseId = caseId, level = level, channel = NotificationChannel.WHATSAPP,
             recipientId = recipient, message = WaTemplates.render(message, config.config().frontendUrl), dedupKey = key,
             createdAt = now, templatePayload = encode(message), nextAttemptAt = now,
-            expiresAt = expiresAt?.coerceAtMost(now.plus(lifetime)) ?: now.plus(lifetime)))
+            expiresAt = expiresAt?.coerceAtMost(now.plus(lifetime)) ?: now.plus(lifetime))).also {
+            trace(it, DiagnosticOutcome.QUEUED)
+        }
     }
 
     @Scheduled(fixedDelayString = "\${schoolagent.whatsapp.retry-ms:30000}")
@@ -58,7 +66,8 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
             .forEach { row -> synchronized(this) { receipts.findById(row.messageId!!).orElse(null)?.let { apply(row, it) } } }
         rows.pending(clock.instant(), org.springframework.data.domain.PageRequest.of(0, 30)).forEach { row ->
             try { send(row) } catch (e: Exception) {
-                log.warn("WhatsApp queue processing failed notification={}: {}", row.id, e.message?.take(200))
+                trace(row, DiagnosticOutcome.FAILED)
+                log.warn("WhatsApp queue processing failed errorType={}", e.javaClass.simpleName)
             }
         }
     }
@@ -79,7 +88,6 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
     }
     private fun skip(row: Notification, reason: String) {
         row.status = NotificationStatus.SKIPPED; row.nextAttemptAt = null; row.lastError = reason; rows.save(row)
-        log.info("WhatsApp notification {} skipped: {}", row.id, reason)
     }
 
     internal fun send(row: Notification) {
@@ -88,11 +96,12 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
         val user = row.recipientId?.let { users.findById(it).orElse(null) }
         val queuedMessage = decode(row.templatePayload!!)
         if (!eligible(row) || row.expiresAt?.isAfter(now) != true) {
+            trace(row, if (row.expiresAt?.isAfter(now) != true) DiagnosticOutcome.EXPIRED else DiagnosticOutcome.INELIGIBLE)
             skip(row, "Notification expired, preference/access changed or school facts superseded"); return
         }
-        if (!config.isConfigured()) { defer(row, "WhatsApp is not configured"); return }
+        if (!config.isConfigured()) { trace(row, DiagnosticOutcome.NOT_CONFIGURED); defer(row, "WhatsApp is not configured"); return }
         var message = queuedMessage
-        if (!templates.ready(message)) { defer(row, "Template ${message.name}/${message.language} is not approved or does not match"); return }
+        if (!templates.ready(message)) { trace(row, DiagnosticOutcome.TEMPLATE_NOT_READY); defer(row, "Template ${message.name}/${message.language} is not approved or does not match"); return }
         try {
             if (message.language == "es" && !message.localized) {
                 message = localize(message)
@@ -101,38 +110,48 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
             row.message = WaTemplates.render(message, config.config().frontendUrl)
             require(WaTemplates.body(message, config.config().frontendUrl).length <= 1024) { "Template body exceeds the approved size" }
         } catch (e: Exception) {
+            trace(row, DiagnosticOutcome.PREPARATION_FAILED)
             retry(row, "Preparing message: ${e.message?.take(200)}", true); return
         }
         if (!eligible(row) || row.expiresAt?.isAfter(clock.instant()) != true) {
+            trace(row, DiagnosticOutcome.INELIGIBLE)
             skip(row, "Notification changed while preparing it"); return
         }
         // Persist before the request. A process crash or transport timeout is an uncertain outcome,
         // never an invitation to blindly repeat a message that Meta may already have accepted.
         row.status = NotificationStatus.UNKNOWN; row.nextAttemptAt = null; row.lastError = "Send outcome pending"
         row.attemptCount++; rows.saveAndFlush(row)
+        trace(row, DiagnosticOutcome.SENDING)
         try {
             row.messageId = client.sendTemplate(users.findById(user!!.id).orElseThrow().whatsappNumber!!, message.name, message.language, message.params, message.suffix, message.header)
             row.status = NotificationStatus.ACCEPTED; row.sentAt = clock.instant(); row.lastError = null
-            log.info("WhatsApp notification {} accepted after {} seconds in queue", row.id,
-                Duration.between(row.createdAt, row.sentAt).seconds)
+            trace(row, DiagnosticOutcome.ACCEPTED)
             synchronized(this) {
                 rows.saveAndFlush(row)
                 receipts.findById(row.messageId!!).orElse(null)?.let { apply(row, it) }
             }
         } catch (e: WhatsappSendException) {
+            if (e.ambiguous) trace(row, DiagnosticOutcome.UNKNOWN)
             if (e.ambiguous) { row.status = NotificationStatus.UNKNOWN; row.lastError = e.message; rows.save(row) }
             else retry(row, e.message ?: "Send failed", e.retryable, count = false)
             health.failure(ConnectorType.WHATSAPP, e.message ?: "Send failed")
         } catch (e: Exception) {
+            trace(row, DiagnosticOutcome.UNKNOWN)
             row.status = NotificationStatus.UNKNOWN; row.lastError = "Send outcome unknown: ${e.message?.take(200)}"; rows.save(row)
             health.failure(ConnectorType.WHATSAPP, row.lastError!!)
         }
     }
 
     private fun defer(row: Notification, error: String) {
-        if (row.lastError != error) log.info("WhatsApp notification {} waiting: {}", row.id, error)
         row.status = NotificationStatus.QUEUED; row.lastError = error
         row.nextAttemptAt = clock.instant().plusSeconds(60); rows.save(row)
+    }
+
+    private fun trace(row: Notification, outcome: DiagnosticOutcome) {
+        val entry = DiagnosticTrace(DiagnosticStage.WHATSAPP, outcome, accountId = row.recipientId,
+            caseId = row.caseId, notificationId = row.id, count = row.attemptCount)
+        if (outcome in setOf(DiagnosticOutcome.NOT_CONFIGURED, DiagnosticOutcome.TEMPLATE_NOT_READY))
+            diagnostics?.oncePerDay(entry) else diagnostics?.record(entry)
     }
     private fun retry(row: Notification, error: String, retryable: Boolean, count: Boolean = true) {
         if (count) row.attemptCount++
@@ -140,6 +159,7 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
         row.nextAttemptAt = if (retryable && row.attemptCount < 5)
             clock.instant().plusSeconds((60L * (1L shl row.attemptCount.coerceAtMost(6))).coerceAtMost(3600)) else null
         rows.save(row)
+        trace(row, if (row.nextAttemptAt == null) DiagnosticOutcome.FAILED else DiagnosticOutcome.RETRY)
     }
 
     fun sendTest(account: de.schoolagent.domain.model.AppUser): String {
@@ -192,6 +212,12 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
         val rank = listOf(NotificationStatus.ACCEPTED, NotificationStatus.SENT, NotificationStatus.DELIVERED, NotificationStatus.READ)
         if (row.status in setOf(NotificationStatus.DELIVERED, NotificationStatus.READ) && rank.indexOf(next) < rank.indexOf(row.status)) return
         if (row.status == next) return
+        trace(row, when (next) {
+            NotificationStatus.SENT -> DiagnosticOutcome.SENT
+            NotificationStatus.DELIVERED -> DiagnosticOutcome.DELIVERED
+            NotificationStatus.READ -> DiagnosticOutcome.READ
+            else -> DiagnosticOutcome.FAILED
+        })
         row.status = next
         if (next == NotificationStatus.FAILED) {
             // Only failures known to mean non-delivery and temporary unavailability can retry.

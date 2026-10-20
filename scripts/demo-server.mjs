@@ -87,6 +87,8 @@ function api(url) {
   if (p === '/api/health/connectors') return ['ELTERNPORTAL', 'SCHULMANAGER', 'GMAIL', 'CALENDAR', 'WHATSAPP', 'AI'].map(connector =>
     ({ connector, status: 'OK', lastSuccessAt: at(13, '11:59'), lastFailureAt: null, lastError: null, consecutiveFailures: 0 }));
   if (p === '/api/inbox/settings') return { archiveAfterWeeks: 4 };
+  if (p === '/api/admin/google/client') return { clientId: 'example.apps.googleusercontent.com', hasSecret: true, configured: true,
+    redirectUri: 'https://school.example/api/google/callback', source: 'environment' };
   if (p === '/api/google/status') return { clientConfigured: true, connected: true, calendarId: 'demo-calendar', pollingEnabled: true,
     mailbox: `${kid === kids[1].id ? 'taylor' : 'jamie'}@example.org`, authorizeUrl: null };
   if (p === '/api/google/calendar-setup') return { connected: true, configuredCalendarId: 'demo-calendar', configuredIsPrimary: false,

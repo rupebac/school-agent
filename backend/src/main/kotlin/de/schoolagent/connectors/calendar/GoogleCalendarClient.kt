@@ -16,7 +16,7 @@ interface GoogleCalendarClient {
     fun deleteEvent(calendarId: String, googleEventId: String)
 }
 
-class CalendarApiException(message: String, val authRelated: Boolean) : RuntimeException(message)
+class CalendarApiException(message: String, val authRelated: Boolean, val statusCode: Int? = null) : RuntimeException(message)
 
 @Service
 class GoogleCalendarRestClient(
@@ -29,19 +29,29 @@ class GoogleCalendarRestClient(
     fun withChild(childId: java.util.UUID?) { tokenChildId.set(childId) }
 
     override fun insertEvent(calendarId: String, eventJson: String): String {
-        val node = exchange(
-            HttpMethod.POST,
-            "https://www.googleapis.com/calendar/v3/calendars/$calendarId/events",
-            eventJson,
-        )
-        return node.path("id").asText()
+        val json = com.fasterxml.jackson.databind.ObjectMapper()
+        val payload = json.readTree(eventJson)
+        val expectedId = payload.path("id").asText()
+        require(expectedId.matches(Regex("[a-v0-9]{5,1024}"))) { "A stable calendar event ID is required" }
+        try {
+            val node = exchange(HttpMethod.POST, "https://www.googleapis.com/calendar/v3/calendars/$calendarId/events", eventJson)
+            if (node.path("id").asText() != expectedId) throw CalendarApiException("Calendar returned an unexpected event ID", false)
+        } catch (e: CalendarApiException) {
+            if (e.statusCode != 409) throw e
+            val existing = exchange(HttpMethod.GET, "https://www.googleapis.com/calendar/v3/calendars/$calendarId/events/$expectedId", null)
+            val marker = payload.path("extendedProperties").path("private").path("schoolAgentEvent").asText()
+            if (marker.isBlank() || existing.path("extendedProperties").path("private").path("schoolAgentEvent").asText() != marker)
+                throw CalendarApiException("Calendar event ID conflict requires review", false)
+            updateEvent(calendarId, expectedId, eventJson)
+        }
+        return expectedId
     }
 
     override fun updateEvent(calendarId: String, googleEventId: String, eventJson: String) {
         exchange(
             HttpMethod.PATCH,
             "https://www.googleapis.com/calendar/v3/calendars/$calendarId/events/$googleEventId",
-            eventJson,
+            com.fasterxml.jackson.databind.ObjectMapper().readTree(eventJson).also { (it as com.fasterxml.jackson.databind.node.ObjectNode).remove("id") }.toString(),
         )
     }
 
@@ -60,12 +70,15 @@ class GoogleCalendarRestClient(
             )
         } catch (e: org.springframework.web.client.HttpClientErrorException.Unauthorized) {
             throw CalendarApiException("calendar 401", authRelated = true)
+        } catch (e: org.springframework.web.client.HttpStatusCodeException) {
+            if (e.statusCode.value() in setOf(404, 410)) return // already absent: deletion is complete
+            throw CalendarApiException("Google Calendar HTTP ${e.statusCode.value()}", authRelated = e.statusCode.value() == 403, statusCode = e.statusCode.value())
         } catch (e: org.springframework.web.client.RestClientException) {
-            throw CalendarApiException("calendar unreachable: ${e.message}", authRelated = false)
+            throw CalendarApiException("Google Calendar request failed (${e.javaClass.simpleName})", authRelated = false)
         }
     }
 
-    private fun exchange(method: HttpMethod, url: String, body: String): JsonNode {
+    private fun exchange(method: HttpMethod, url: String, body: String?): JsonNode {
         val token = try {
             oauth.accessToken(tokenChildId.get())
         } catch (e: GoogleAuthException) {
@@ -76,8 +89,10 @@ class GoogleCalendarRestClient(
             com.fasterxml.jackson.databind.ObjectMapper().readTree(rest.exchange(url, method, HttpEntity(body, headers), String::class.java).body!!)
         } catch (e: org.springframework.web.client.HttpClientErrorException.Unauthorized) {
             throw CalendarApiException("calendar 401", authRelated = true)
+        } catch (e: org.springframework.web.client.HttpStatusCodeException) {
+            throw CalendarApiException("Google Calendar HTTP ${e.statusCode.value()}", authRelated = e.statusCode.value() == 403, statusCode = e.statusCode.value())
         } catch (e: org.springframework.web.client.RestClientException) {
-            throw CalendarApiException("calendar unreachable: ${e.message}", authRelated = false)
+            throw CalendarApiException("Google Calendar request failed (${e.javaClass.simpleName})", authRelated = false)
         }
     }
 

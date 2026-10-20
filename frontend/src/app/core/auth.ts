@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
-import { Observable, tap } from 'rxjs';
+import { Observable, switchMap, tap } from 'rxjs';
 import { I18n } from './i18n';
 
 export interface Me {
@@ -48,10 +48,9 @@ export class Auth {
     return this.http
       .post<never>('/api/auth/login', { username: user, password, rememberMe }, { responseType: 'text' as never })
       .pipe(
-        tap(() => {
-          this.http.get<Me>('/api/auth/me').subscribe((m) => this.applyMe(m));
-        }),
-      ) as Observable<Me>;
+        switchMap(() => this.http.get<Me>('/api/auth/me')),
+        tap((m) => this.applyMe(m)),
+      );
   }
 
   logout(): void {

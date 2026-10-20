@@ -1,3 +1,4 @@
+import { GoogleClientSettings } from './google-client-settings';
 import { SchoolEmailSettings } from './school-email-settings';
 import { InstallApp } from '../../core/pwa';
 import { HttpClient } from '@angular/common/http';
@@ -17,7 +18,7 @@ import { I18n, LocDatePipe, TranslatePipe } from '../../core/i18n';
 import { LabelPipe } from '../../core/labels';
 
 @Component({
-  imports: [SchoolEmailSettings, InstallApp, FormsModule, TranslatePipe, LocDatePipe, LabelPipe],
+  imports: [GoogleClientSettings, SchoolEmailSettings, InstallApp, FormsModule, TranslatePipe, LocDatePipe, LabelPipe],
   selector: 'app-settings-page',
   styleUrl: './settings.css',
   templateUrl: './settings.html',
@@ -220,7 +221,7 @@ export class SettingsPage implements OnInit {
       this.myWhatsapp = me?.whatsappNumber ?? '';
       this.preferences.loadFromMe(me);
     });
-    this.whatsapp.refresh(null, s => this.applyWhatsapp(s));
+    if (this.auth.isAdmin) this.whatsapp.refresh(null, s => this.applyWhatsapp(s));
     this.schoolCalendar.refresh();
     this.kidsStore.refresh(() => {
       this.settingsKidId.set(this.kidsStore.kids().find(k => k.id === params.get('kid'))?.id ?? this.kidsStore.activeKidId() ?? this.kidsStore.kids()[0]?.id ?? null);

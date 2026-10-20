@@ -25,6 +25,7 @@ class AdminUserController(
     private val users: AppUserRepository,
     private val encoder: PasswordEncoder,
     private val clock: Clock,
+    private val rememberTokens: org.springframework.security.web.authentication.rememberme.PersistentTokenRepository,
 ) {
 
     data class UserDto(
@@ -81,9 +82,11 @@ class AdminUserController(
     }
 
     @PutMapping("/{id}")
+    @org.springframework.transaction.annotation.Transactional
     fun update(@PathVariable id: java.util.UUID, @RequestBody request: UpdateUserRequest): UserDto {
         val account = users.findById(id).orElse(null)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "user not found")
+        if (request.role != null || !request.password.isNullOrBlank()) rememberTokens.removeUserTokens(account.name)
         request.displayName?.let { account.displayName = it }
         request.role?.let { account.role = if (it == "ADMIN") "ADMIN" else "PARENT" }
         request.whatsappNumber?.let { account.whatsappNumber = it.trim().takeIf { s -> s.isNotBlank() } }
@@ -97,12 +100,14 @@ class AdminUserController(
     }
 
     @DeleteMapping("/{id}")
+    @org.springframework.transaction.annotation.Transactional
     fun delete(@PathVariable id: java.util.UUID, @AuthenticationPrincipal admin: UserDetails) {
         val account = users.findById(id).orElse(null)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "user not found")
         if (account.name == admin.username) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "cannot delete yourself")
         }
+        rememberTokens.removeUserTokens(account.name)
         users.delete(account)
     }
 

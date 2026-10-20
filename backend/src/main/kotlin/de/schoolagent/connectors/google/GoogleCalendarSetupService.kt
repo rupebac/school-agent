@@ -23,6 +23,7 @@ class GoogleCalendarSetupService(
     private val settings: SettingRepository,
     private val kids: ChildRepository,
     private val clock: Clock,
+    private val events: de.schoolagent.domain.repo.SchoolEventRepository? = null,
 ) {
 
     data class SetupStatus(
@@ -36,6 +37,7 @@ class GoogleCalendarSetupService(
 
     /** Effective calendar id for a kid: stored choice wins over the env property. */
     fun resolveCalendarId(childId: java.util.UUID? = null): String =
+        if (settings.findById(readyKey(childId)).orElse(null)?.valueJson == "false") "primary" else
         settings.findById(childId?.let { settingKey(it) } ?: SETTING_KEY).orElse(null)
             ?.valueJson?.trim()?.takeIf { it.isNotBlank() } ?: if (childId == null) props.calendarId else "primary"
 
@@ -83,6 +85,8 @@ class GoogleCalendarSetupService(
         }
         val key = childId?.let { settingKey(it) } ?: SETTING_KEY
         settings.save(Setting(key = key, valueJson = calendar.id, updatedAt = clock.instant()))
+        events?.queueCalendarReconciliation(childId, calendar.id, clock.instant())
+        settings.save(Setting(key = readyKey(childId), valueJson = "true", updatedAt = clock.instant()))
         calendar
     }
 
@@ -101,6 +105,7 @@ class GoogleCalendarSetupService(
             ?: props.schoolCalendarName
 
     companion object {
+        fun readyKey(childId: java.util.UUID?) = childId?.let { "google.$it.calendar-ready" } ?: "google.calendar-ready"
         const val SETTING_KEY = "google.calendar-id"
         fun settingKey(childId: java.util.UUID) = "google.$childId.calendar-id"
     }

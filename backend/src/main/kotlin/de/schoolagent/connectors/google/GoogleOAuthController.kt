@@ -50,7 +50,7 @@ class GoogleOAuthController(
         @AuthenticationPrincipal user: UserDetails,
         @RequestParam(required = false) kid: java.util.UUID?,
     ): StatusDto {
-        access.requireAccess(user, kid)
+        requireConnectionAccess(user, kid)
         val configured = oauth.clientConfigured()
         return StatusDto(
             clientConfigured = configured,
@@ -68,7 +68,7 @@ class GoogleOAuthController(
         @AuthenticationPrincipal user: UserDetails,
         @RequestParam(required = false) kid: java.util.UUID?,
     ): ResponseEntity<Void> {
-        access.requireAccess(user, kid)
+        requireConnectionAccess(user, kid)
         return ResponseEntity.status(302).header("Location", oauth.authorizationUrl(user.username, kid)).build<Void>()
     }
 
@@ -84,20 +84,20 @@ class GoogleOAuthController(
         @RequestParam(name = "error", required = false) error: String?,
     ): ResponseEntity<Void> {
         if (error != null) {
-            return redirect("googleError=" + encode("Google returned an error: $error"))
+            return redirect("googleError=" + encode("Google authorization was not completed. Try connecting again."))
         }
         return try {
             val result = oauth.handleCallback(code ?: error("Missing authorization code"), state)
             runCatching { calendarSetup.ensureSchoolCalendar(result.childId, emptyList()) }
             redirect("google=connected" + (result.childId?.let { "&kid=$it" } ?: ""))
         } catch (e: Exception) {
-            redirect("googleError=" + encode("Connection failed: ${e.message}"))
+            redirect("googleError=" + encode("Google connection failed. Check the client settings and callback address, then connect again."))
         }
     }
 
     @DeleteMapping("/connection")
     fun disconnect(@RequestParam(required = false) kid: java.util.UUID?, @AuthenticationPrincipal user: UserDetails): ResponseEntity<Void> {
-        access.requireAccess(user, kid)
+        requireConnectionAccess(user, kid)
         oauth.revoke(kid)
         return ResponseEntity.noContent().build()
     }
@@ -106,7 +106,7 @@ class GoogleOAuthController(
 
     @GetMapping("/calendar-setup")
     fun calendarSetup(@RequestParam(required = false) kid: java.util.UUID?, @AuthenticationPrincipal user: UserDetails): CalendarSetupDto {
-        access.requireAccess(user, kid)
+        requireConnectionAccess(user, kid)
         val s = calendarSetup.status(kid)
         return CalendarSetupDto(
             connected = s.connected,
@@ -124,7 +124,7 @@ class GoogleOAuthController(
         @RequestBody(required = false) request: EnsureCalendarRequest?,
         @AuthenticationPrincipal user: UserDetails,
     ): ResponseEntity<CalendarSetupDto> {
-        access.requireAccess(user, kid)
+        requireConnectionAccess(user, kid)
         val shareWith = request?.shareWith ?: emptyList()
         val created = calendarSetup.ensureSchoolCalendar(kid, shareWith)
         val s = calendarSetup.status(kid)
@@ -138,6 +138,12 @@ class GoogleOAuthController(
                 calendars = s.calendars,
             ),
         )
+    }
+
+    private fun requireConnectionAccess(user: org.springframework.security.core.userdetails.UserDetails, kid: java.util.UUID?) {
+        if (kid == null && !access.isAdmin(user)) throw org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.FORBIDDEN, "The shared Google connection requires an administrator")
+        access.requireAccess(user, kid)
     }
 
     private fun redirect(query: String): ResponseEntity<Void> =

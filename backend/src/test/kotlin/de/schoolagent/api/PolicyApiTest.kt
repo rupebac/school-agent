@@ -117,4 +117,11 @@ class PolicyApiTest {
         assertThat(deleted.statusCode.value()).isEqualTo(200)
         assertThat(get("/api/family-rules").body).doesNotContain("ignore-sports-day")
     }
+
+    @Test fun `rule text is preserved as text and safely round trips punctuation`() {
+        for (text in listOf("Bring \"signed\" form\nThen pay", "[Monday]", "{not JSON}")) {
+            assertThat(FamilyRulesController.displayText(FamilyRulesController.asJsonText(text))).isEqualTo(text)
+        }
+    }
+
 }

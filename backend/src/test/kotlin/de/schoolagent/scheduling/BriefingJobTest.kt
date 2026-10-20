@@ -1,6 +1,7 @@
 package de.schoolagent.scheduling
 
 import de.schoolagent.briefing.BriefingService
+import de.schoolagent.diagnostics.*
 import de.schoolagent.domain.model.AppUser
 import de.schoolagent.domain.repo.AppUserRepository
 import de.schoolagent.domain.repo.NotificationRepository
@@ -51,4 +52,45 @@ class BriefingJobTest {
         job.check()
         verify(exactly = 1) { outbox.enqueue(parent.id, any(), match { it.header == "Next week for Jamie" }, any(), any(), any(), Instant.parse("2026-10-25T23:00:00Z")) }
     }
+
+    @Test fun `empty evening plan is distinguished from a missed schedule window`() {
+        val diagnostics = mockk<IntegrationDiagnostics>(relaxed = true)
+        val now = Instant.parse("2026-10-20T17:00:00Z")
+        val tomorrow = LocalDate.parse("2026-10-21")
+        every { briefing.plans(any(), tomorrow, false) } returns emptyList()
+        BriefingJob(users, briefing, notifications, config, outbox, Clock.fixed(now, ZoneOffset.UTC), diagnostics).check()
+        verify { diagnostics.oncePerDay(match { it.outcome == DiagnosticOutcome.NO_ITEMS && it.accountId == parent.id && it.period == tomorrow }) }
+        verify { diagnostics.record(match { it.stage == DiagnosticStage.BRIEFING && it.outcome == DiagnosticOutcome.COMPLETED && it.count == 0 }) }
+        verify(exactly = 0) { outbox.enqueue(any(), any(), any(), any(), any(), any(), any()) }
+        clearMocks(diagnostics)
+        BriefingJob(users, briefing, notifications, config, outbox, Clock.fixed(now.plusSeconds(1800), ZoneOffset.UTC), diagnostics).check()
+        verify { diagnostics.oncePerDay(match { it.outcome == DiagnosticOutcome.WINDOW_PASSED }) }
+    }
+
+    @Test fun `disabled unconfigured and already queued reminders have distinct diagnostics`() {
+        val diagnostics = mockk<IntegrationDiagnostics>(relaxed = true)
+        val clock = Clock.fixed(Instant.parse("2026-10-20T17:00:00Z"), ZoneOffset.UTC)
+        val job = BriefingJob(users, briefing, notifications, config, outbox, clock, diagnostics)
+        every { config.isConfigured() } returns false
+        job.check()
+        verify { diagnostics.oncePerDay(match { it.outcome == DiagnosticOutcome.NOT_CONFIGURED }) }
+        every { config.isConfigured() } returns true
+        parent.briefingEnabled = false
+        job.check()
+        verify { diagnostics.oncePerDay(match { it.outcome == DiagnosticOutcome.DISABLED }) }
+        parent.briefingEnabled = true
+        every { notifications.existsByDedupKey(any()) } returns true
+        job.check()
+        verify { diagnostics.oncePerDay(match { it.outcome == DiagnosticOutcome.DUPLICATE }) }
+        verify(exactly = 0) { briefing.plans(any(), any(), any()) }
+    }
+    @Test fun `single digit hours accepted by preferences still send a briefing`() {
+        parent.briefingTime = "9:00"
+        every { briefing.plans(any(), LocalDate.parse("2026-10-21"), false) } returns
+            listOf(BriefingService.Plan(kid, "Jamie", "21 October", listOf("Bring the book")))
+        BriefingJob(users, briefing, notifications, config, outbox,
+            Clock.fixed(Instant.parse("2026-10-20T07:05:00Z"), ZoneOffset.UTC)).check()
+        verify(exactly = 1) { outbox.enqueue(parent.id, any(), any(), any(), any(), any(), any()) }
+    }
+
 }

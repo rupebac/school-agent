@@ -63,6 +63,8 @@ class AuthController(
             val auth = authManager.authenticate(
                 UsernamePasswordAuthenticationToken(request.username.trim(), request.password),
             )
+            org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy()
+                .onAuthentication(auth, httpRequest, httpResponse)
             val context: SecurityContext = SecurityContextHolder.createEmptyContext()
             context.authentication = auth
             SecurityContextHolder.setContext(context)

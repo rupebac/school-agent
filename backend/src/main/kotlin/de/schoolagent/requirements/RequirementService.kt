@@ -66,6 +66,18 @@ class RequirementService(
         return saved
     }
 
+    fun complete(id: UUID, actor: Actor): ChildRequirement {
+        val current = requirementRepo.lockById(id) ?: throw IllegalArgumentException("Requirement not found")
+        if (current.status == RequirementStatus.DONE) return current
+        require(current.status == RequirementStatus.OPEN) { "Only open requirements can be completed" }
+        current.status = RequirementStatus.DONE
+        current.updatedAt = clock.instant()
+        val saved = requirementRepo.save(current)
+        recordChange(saved, ChangeType.CHANGE, mapOf("status" to "DONE"), mapOf("status" to "OPEN"))
+        audit(saved.caseId, actor, "REQUIREMENT_COMPLETED", """{"requirementId":"${saved.id}"}""")
+        return saved
+    }
+
     fun remove(id: UUID, actor: Actor): ChildRequirement {
         val found = load(id)
         found.status = RequirementStatus.CANCELLED
@@ -79,15 +91,15 @@ class RequirementService(
     private fun load(id: UUID): ChildRequirement =
         requirementRepo.findById(id).orElseThrow { IllegalArgumentException("requirement $id not found") }
 
-    private fun recordChange(req: ChildRequirement, type: ChangeType, after: Map<String, String>) {
+    private fun recordChange(req: ChildRequirement, type: ChangeType, after: Map<String, String>, before: Map<String, String> = emptyMap()) {
         changeRepo.save(
             CaseChange(
                 caseId = req.caseId,
                 changeType = type,
                 targetType = ChangeTargetType.REQUIREMENT,
                 targetId = req.id,
-                beforeJson = "{}",
-                afterJson = after.entries.joinToString(",", "{", "}") { "\"${it.key}\":\"${it.value}\"" },
+                beforeJson = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(before),
+                afterJson = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(after),
                 createdAt = clock.instant(),
             ),
         )

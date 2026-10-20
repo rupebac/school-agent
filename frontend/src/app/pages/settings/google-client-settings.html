@@ -1,0 +1,45 @@
+<section class="card">
+  <h2>{{ 'set.googleClient.title' | t }}</h2>
+  <p>{{ 'set.googleClient.intro' | t }}</p>
+  @if (error(); as error) { <p class="error" role="alert">{{ error }}</p> }
+  @if (status(); as s) {
+    <p class="muted">{{ ('set.googleClient.source.' + s.source) | t }}</p>
+    <p>{{ (s.configured ? 'set.googleClient.configured' : 'set.googleClient.missing') | t }}</p>
+    <ol>
+      <li>{{ 'set.googleClient.step1' | t }}
+        <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">{{ 'set.googleClient.console' | t }}</a>
+      </li>
+      <li>{{ 'set.googleClient.step2' | t }}</li>
+      <li>{{ 'set.googleClient.step3' | t }}</li>
+    </ol>
+    <label for="google-callback">{{ 'set.googleClient.callback' | t }}</label>
+    <div class="callback">
+      <input id="google-callback" type="text" readonly [value]="s.redirectUri" aria-describedby="google-callback-help" />
+      <button type="button" class="ghost" (click)="copyCallback()">{{ 'set.googleClient.copy' | t }}</button>
+    </div>
+    <p class="muted" id="google-callback-help">{{ 'set.googleClient.callbackHelp' | t }}</p>
+    <form (ngSubmit)="save()">
+      <label>{{ 'set.googleClient.id' | t }}
+        <input name="clientId" type="text" [(ngModel)]="clientId" (ngModelChange)="confirmClientChange = false" maxlength="256" autocomplete="off" spellcheck="false" [disabled]="busy()" required />
+      </label>
+      <label>{{ 'set.googleClient.secret' | t }}
+        <input name="clientSecret" type="password" [(ngModel)]="clientSecret" maxlength="4096" autocomplete="new-password" spellcheck="false" [disabled]="busy()" aria-describedby="google-secret-help" />
+      </label>
+      <p class="muted" id="google-secret-help">{{ (s.hasSecret && clientId.trim() === s.clientId ? 'set.googleClient.keepSecret' : 'set.googleClient.enterSecret') | t }}</p>
+      @if (clientChanging()) {
+        <label class="confirm">
+          <input name="confirmClientChange" type="checkbox" [(ngModel)]="confirmClientChange" [disabled]="busy()" />
+          <span>{{ 'set.googleClient.confirmChange' | t }}</span>
+        </label>
+      }
+      <button type="submit" [disabled]="!canSave()">{{ (busy() ? 'set.googleClient.saving' : 'common.save') | t }}</button>
+    </form>
+    <p class="muted">{{ 'set.googleClient.owner' | t }}</p>
+    <p>{{ 'set.googleClient.next' | t }}</p>
+  } @else if (error()) {
+    <button type="button" class="ghost" (click)="load()">{{ 'set.googleClient.retry' | t }}</button>
+  } @else {
+    <p>{{ 'common.loading' | t }}</p>
+  }
+  @if (message(); as message) { <p role="status">{{ message }}</p> }
+</section>

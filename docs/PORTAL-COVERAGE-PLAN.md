@@ -24,7 +24,7 @@ manual.
 | Receipt status | Listing receipt flag | Student receipt timestamp |
 | Form response state | Unknown: no verified response contract | Pending/partial/submitted/closed, question IDs/choices and deadline |
 | Payment observations | Existing request table; unverified settlement stays unknown | Full parent invoice history plus unpaid widget; explicit settlement and exact minor-unit amounts |
-| Additional communications | Noticeboard HTML and verified PDF attachment links | Incoming Messenger messages on a verified single-child account |
+| Additional communications | Noticeboard HTML and verified PDF/image attachment links | Incoming Messenger messages on a verified single-child account |
 | Homework | Populated classbook day/subject rows, rolling seven days | Parent homework feed grouped by day/subject |
 | Timetable | Verified class substitution rows | Personal lesson exceptions and explicitly observed restoration |
 
@@ -36,8 +36,10 @@ student identities and `messenger/get-messages-by-subscription` with string subs
 IDs; numeric subscription IDs produce a provider error. Receipt metadata comes from
 the child-scoped letter list when the reading endpoint omits it. The generated Sent
 header is excluded from material-change detection to preserve legacy Done/read state.
-The tested homework endpoint currently returns a provider error for the connected
-account; its feed reports failure and preserves existing records. Real account
+Response deadlines persist as ISO timestamps independently of MVC JSON configuration.
+Noticeboard attachment media types are verified from their bytes; scanned image
+announcements are retained alongside PDFs. The tested homework endpoint currently
+returns a provider error for the connected account; its feed reports failure and preserves existing records. Real account
 availability remains independently reported by each feed.
 No live answers or consent choices were submitted during discovery.
 

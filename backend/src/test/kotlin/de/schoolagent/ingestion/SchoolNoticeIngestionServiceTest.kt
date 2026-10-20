@@ -267,6 +267,19 @@ class SchoolNoticeIngestionServiceTest {
             .isNotEqualTo(sources.findById(other.sourceId).orElseThrow().caseId)
     }
 
+    @Test fun `school form deadlines persist as ISO timestamps on initial import and refresh`() {
+        response = SchoolResponse(receipt = "PENDING", response = "PENDING",
+            deadline = Instant.parse("2026-10-12T22:00:00Z"), questionIds = listOf("consent"), deadlineAllDay = true)
+        assertThat(sync().failed).isZero()
+        val status = com.fasterxml.jackson.databind.ObjectMapper().readTree(item().schoolStatus)
+        assertThat(status.path("deadline").asText()).isEqualTo("2026-10-12T22:00:00Z")
+        assertThat(status.path("deadlineAllDay").asBoolean()).isTrue()
+        assertThat(actions.findByDedupKey("school-response:${item().itemKey}")!!.dueAt).isEqualTo(response!!.deadline)
+        response = response!!.copy(deadline = Instant.parse("2026-10-13T22:00:00Z"))
+        assertThat(sync().failed).isZero()
+        assertThat(actions.findByDedupKey("school-response:${item().itemKey}")!!.dueAt).isEqualTo(response!!.deadline)
+    }
+
     @Test fun `school response submission completes only its linked duty and receipt alone completes nothing`() {
         response = SchoolResponse(receipt = "ACKNOWLEDGED", response = "PENDING", questionIds = listOf("consent"))
         sync()

@@ -112,9 +112,7 @@ class ElternportalSchoolConnector : SchoolConnector {
                     if (item.attachments.isNotEmpty() && !credentials.allowReceiptDownloads)
                         throw SchoolConnectionException("Noticeboard PDF downloads require receipt permission")
                     val attachments = item.attachments.map { attachment ->
-                        val bytes = client.downloadFile(attachment)
-                        require(bytes.take(5).toByteArray().contentEquals("%PDF-".toByteArray())) { "Invalid noticeboard PDF" }
-                        SchoolDocument(attachment.repoId, attachment.title, "application/pdf", bytes)
+                        additional.attachment(attachment, client.downloadFile(attachment))
                     }
                     return listOf(SchoolDocument("letter", notice.title, "text/html", item.html.toByteArray(), notice.receivedAt)) + attachments
                 }

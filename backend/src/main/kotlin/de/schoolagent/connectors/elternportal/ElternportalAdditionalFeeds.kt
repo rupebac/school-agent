@@ -49,6 +49,19 @@ class ElternportalAdditionalFeeds {
         return items
     }
 
+    /** Noticeboard downloads can be scanned images as well as PDFs. Preserve the original bytes. */
+    fun attachment(brief: PortalBrief, bytes: ByteArray): SchoolDocument {
+        fun starts(vararg prefix: Int) = bytes.size >= prefix.size && prefix.indices.all { bytes[it].toInt() and 255 == prefix[it] }
+        val mime = when {
+            starts(0x25, 0x50, 0x44, 0x46, 0x2d) -> "application/pdf"
+            starts(0xff, 0xd8, 0xff) -> "image/jpeg"
+            starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) -> "image/png"
+            bytes.take(6).toByteArray().decodeToString() in setOf("GIF87a", "GIF89a") -> "image/gif"
+            else -> throw SchoolConnectionException("Unsupported noticeboard attachment format; check the original in the portal")
+        }
+        return SchoolDocument(brief.repoId, brief.title, mime, bytes)
+    }
+
     fun timetable(html: String, student: SchoolStudent, url: String): SchoolRecordFeed {
         scope.requireSelected(html, student)
         val doc = Jsoup.parse(html)

@@ -22,6 +22,21 @@ class ElternportalAdditionalFeedsTest {
         assertThat(item.html).contains("Tickets open next week.").doesNotContain("csrf", "aabbcc")
     }
 
+    @Test fun `noticeboard image attachments retain their media type and are not rejected as invalid PDFs`() {
+        val brief = PortalBrief("11", null, "Scanned school announcement", null, null, null, "aabbcc")
+        val image = java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB)
+        for ((format, mime) in listOf("jpeg" to "image/jpeg", "png" to "image/png", "gif" to "image/gif")) {
+            val bytes = java.io.ByteArrayOutputStream().also { javax.imageio.ImageIO.write(image, format, it) }.toByteArray()
+            val part = parser.attachment(brief, bytes)
+            assertThat(part.id).isEqualTo(brief.repoId)
+            assertThat(part.mimeType).isEqualTo(mime)
+            assertThat(part.bytes).isEqualTo(bytes)
+        }
+        assertThat(parser.attachment(brief, "%PDF-1.7 synthetic".toByteArray()).mimeType).isEqualTo("application/pdf")
+        assertThatThrownBy { parser.attachment(brief, "<html>Login required</html>".toByteArray()) }
+            .isInstanceOf(SchoolConnectionException::class.java)
+    }
+
     @Test fun `classbook reads assignments from the requested day and uses only explicit deadlines`() {
         val html = page("""<h2>Klassenbuch</h2><input name="cur_date" value="20.10.2026">
             <a href="/service/klassenbuch?cur_date=19.10.2026">Previous day</a>

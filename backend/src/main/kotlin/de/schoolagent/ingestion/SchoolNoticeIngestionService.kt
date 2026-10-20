@@ -34,7 +34,7 @@ class SchoolNoticeIngestionService(
     private val clock: Clock,
     private val responses: SchoolResponseReconciliation,
 ) {
-    private val json = jacksonObjectMapper().findAndRegisterModules()
+    private val json = jacksonObjectMapper()
     private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
     data class Result(val seen: Int, val changed: Int, val failed: Int, val pending: Int = 0, val newPending: Int = 0)
     private data class Part(val document: SchoolDocument, val hash: String, val facts: String)
@@ -63,7 +63,7 @@ class SchoolNoticeIngestionService(
             val existing = try { known[key] ?: adopt(childId, credentials, namespace, key, notice) }
             catch (e: Exception) {
                 failed++
-                log.warn("School notice adoption failed reference={} errorType={}", key.take(12), e.javaClass.simpleName)
+                log.warn("School notice adoption failed reference={} errorType={} causePath={}", key.take(12), e.javaClass.simpleName, failurePath(e))
                 log.debug("School check failure location={}", e.stackTrace.take(6).joinToString())
                 continue
             }
@@ -94,7 +94,7 @@ class SchoolNoticeIngestionService(
                 }
             } catch (e: Exception) {
                 failed++
-                log.warn("School notice content check failed reference={} errorType={}", key.take(12), e.javaClass.simpleName)
+                log.warn("School notice content check failed reference={} errorType={} causePath={}", key.take(12), e.javaClass.simpleName, failurePath(e))
                 log.debug("School check failure location={}", e.stackTrace.take(6).joinToString())
                 existing?.let { fail(it, "CONTENT_CHECK_FAILED", pending = markerChanged || titleChanged) }
             }
@@ -116,7 +116,7 @@ class SchoolNoticeIngestionService(
             }
             responses.reconcile(c, key, item.schoolStatus, response, credentials.provider, notice.url)
             item.checkedAt = now; item.lastSuccessAt = now; item.failureCode = null; item.changeMarker = notice.changeMarker
-            item.schoolStatus = response?.let(json::writeValueAsString)
+            item.schoolStatus = response?.let(::responseJson)
             items.save(item)
             return false
         }
@@ -166,7 +166,7 @@ class SchoolNoticeIngestionService(
         saved.failureCode = null; saved.changeMarker = notice.changeMarker
         saved.title = notice.title
         responses.reconcile(c, key, saved.schoolStatus, response, credentials.provider, notice.url)
-        saved.schoolStatus = response?.let(json::writeValueAsString)
+        saved.schoolStatus = response?.let(::responseJson)
         items.save(saved)
         revisions.save(SchoolItemRevision(itemKey = key, version = version, manifestHash = raw, factHash = facts,
             parts = json.writeValueAsString(selected.map { it.id }), observedAt = now, material = material))
@@ -264,6 +264,18 @@ class SchoolNoticeIngestionService(
                 } == true
             } else false
         }
+    }
+
+    private fun responseJson(response: SchoolResponse) = json.writeValueAsString(mapOf(
+        "receipt" to response.receipt, "response" to response.response,
+        "deadline" to response.deadline?.toString(), "deadlineAllDay" to response.deadlineAllDay,
+        "questionIds" to response.questionIds, "answeredQuestions" to response.answeredQuestions,
+    ))
+
+    /** Record cause types and code locations, never provider bodies, exception messages or payloads. */
+    private fun failurePath(error: Throwable) = generateSequence(error) { it.cause }.take(8).joinToString(" <- ") {
+        val location = it.stackTrace.firstOrNull { frame -> frame.className.startsWith("de.schoolagent.") }
+        "${it.javaClass.simpleName}@${location?.fileName ?: "external"}:${location?.lineNumber ?: 0}"
     }
 
     private fun digest(values: List<String>) = DedupKeys.sha256(json.writeValueAsString(values.sorted()))

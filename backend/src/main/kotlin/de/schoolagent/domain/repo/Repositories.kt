@@ -127,10 +127,12 @@ interface SchoolEventRepository : JpaRepository<SchoolEvent, UUID> {
         where c.id = e.caseId and c.childId = :childId
           and ((coalesce(e.endTime, e.startTime) >= :from
             and e.status <> de.schoolagent.domain.enums.EventStatus.CANCELLED
-            and e.eventType <> de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)
+            and e.eventType not in (de.schoolagent.domain.enums.EventType.SCHOOL_REPORT,
+              de.schoolagent.domain.enums.EventType.TIMETABLE_CHANGE))
             or (e.googleEventId is not null and
               (e.status = de.schoolagent.domain.enums.EventStatus.CANCELLED
-                or e.eventType = de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)))
+                or e.eventType in (de.schoolagent.domain.enums.EventType.SCHOOL_REPORT,
+                  de.schoolagent.domain.enums.EventType.TIMETABLE_CHANGE))))
           and (e.googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.PENDING
             or (e.googleSyncStatus = de.schoolagent.domain.enums.GoogleSyncStatus.ERROR and e.updatedAt <= :retryBefore))
         order by e.startTime, e.id

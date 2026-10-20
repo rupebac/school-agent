@@ -282,7 +282,7 @@ class EventsController(
         val allowed = access.accessibleKidIds(user)
         val cases = caseRepo.findAll().filter { (it.childId == null || it.childId in allowed) && (kid == null || it.childId == kid) }.associateBy { it.id }
         val events = eventRepo.findAll().filter { (from == null || !(it.endTime ?: it.startTime).isBefore(from)) && (to == null || it.startTime.isBefore(to)) }.sortedBy { it.startTime }
-        return events.filter { cases.containsKey(it.caseId) }.map { it.toDto(cases[it.caseId]?.title) }
+        return events.filter { it.eventType.isCalendarAppointment() && cases.containsKey(it.caseId) }.map { it.toDto(cases[it.caseId]?.title) }
     }
 
     private fun SchoolEvent.toDto(caseTitle: String?) = EventDto(

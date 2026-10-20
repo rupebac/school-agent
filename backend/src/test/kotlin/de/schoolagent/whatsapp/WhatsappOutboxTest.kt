@@ -37,9 +37,14 @@ class WhatsappOutboxTest {
     private val parent = AppUser(name = "morgan", displayName = "Morgan", passwordHash = "x", whatsappNumber = "+49123")
     private val inbox = mockk<de.schoolagent.domain.service.FamilyInboxService>(relaxed = true)
     private val diagnostics = mockk<IntegrationDiagnostics>(relaxed = true)
+    private val actions = mockk<ParentActionRepository>(relaxed = true)
+    private val events = mockk<SchoolEventRepository>(relaxed = true)
+    private val needs = mockk<ChildRequirementRepository>(relaxed = true)
+    private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
+    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock)
     private lateinit var outbox: WhatsappOutbox
     @BeforeEach fun setup() {
-        outbox = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health, clock, inbox, diagnostics = diagnostics)
+        outbox = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health, clock, inbox, policy, diagnostics = diagnostics)
         every { config.config() } returns WhatsAppConfigService.Config("https://graph.facebook.com/v25.0", "phone", "waba", "t", null, null, "https://school.example.org")
         every { config.isConfigured() } returns true
         every { rows.existsByDedupKey(any()) } answers { saved.any { it.dedupKey == firstArg<String>() } }
@@ -233,7 +238,7 @@ class WhatsappOutboxTest {
         every { cases.findById(c.id) } returns Optional.of(c)
         every { relevance.isArchived(c) } returns true
         val guarded = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health,
-            Clock.fixed(now, ZoneOffset.UTC), inbox, relevance)
+            Clock.fixed(now, ZoneOffset.UTC), inbox, InstantNoticePolicy(actions, events, needs, relevance, clock))
         guarded.enqueue(parent.id, "decision:${c.id}:current:false:${parent.id}:0", message(), c.id)
         guarded.send(saved.single())
         assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
@@ -271,4 +276,27 @@ class WhatsappOutboxTest {
         verify(exactly = 1) { model.complete(ModelRole.TEXT, any(), any(), any()) }
         verify(exactly = 2) { client.sendTemplate(any(), any(), "es", match { it.contains("Mañana") }, any(), any(), any()) }
     }
+    @Test fun `queued correction is skipped if its school date passes before delivery`() {
+        val c = SchoolCase(title = "School event", importanceScore = 4, status = CaseStatus.INFORMATION_ONLY)
+        every { cases.findById(c.id) } returns Optional.of(c)
+        every { inbox.revision(c.id) } returns "current"
+        every { events.findByCaseId(c.id) } returns listOf(SchoolEvent(caseId = c.id, title = "Event",
+            eventType = EventType.SCHOOL_EVENT, startTime = now.plusSeconds(30), dedupKey = "event"))
+        outbox.enqueue(parent.id, "school-change:${c.id}:current:${parent.id}:0", message(), c.id)
+        currentTime = now.plusSeconds(60)
+        outbox.send(saved.single())
+        assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
+        verify(exactly = 0) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
+    }
+    @Test fun `school corrections do not bypass archived relevance`() {
+        val c = SchoolCase(title = "Old undated letter", importanceScore = 4, status = CaseStatus.INFORMATION_ONLY)
+        every { cases.findById(c.id) } returns Optional.of(c)
+        every { inbox.revision(c.id) } returns "current"
+        every { relevance.isArchived(c) } returns true
+        outbox.enqueue(parent.id, "school-change:${c.id}:current:${parent.id}:0", message(), c.id)
+        outbox.send(saved.single())
+        assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
+        verify(exactly = 0) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
+    }
+
 }

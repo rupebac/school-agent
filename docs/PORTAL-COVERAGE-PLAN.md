@@ -51,11 +51,21 @@ claim full archival coverage or infer deletion from absence. Multi-child Messeng
 unavailable until explicit attribution is verified. Elternportal teacher-contact
 navigation is not treated as an incoming inbox.
 
-Timetable entries are date/period changes, not inferred arrival/departure instructions.
+Timetable entries are date/period change notices, not lesson appointments or inferred
+arrival/departure instructions. They remain in the inbox and relevant WhatsApp plans,
+without separate entries in either calendar. V35 schedules removal of their existing
+app-owned Google projections through the normal retryable worker. Actual school events
+continue to update or cancel their existing Calendar IDs.
 Schulmanager normal observations can restore a previously imported exception;
 Elternportal missing rows cannot prove restoration. Homework publication dates never
 become deadlines. Undated assignments appear in daily plans and child requirements,
 without immediate per-assignment WhatsApp messages or invented calendar events.
+
+The first full manifest of an adopted legacy letter and the first observation of its
+school response state establish quiet baselines. Instant notices share date/relevance
+checks at composition and delivery: expired events, overdue-only duties and archived
+letters do not replay as new school changes. Future cancellations remain eligible;
+these notification checks never complete or delete the underlying family duties.
 
 Material updates preserve completed unrelated tasks and existing event/Calendar IDs.
 Unknown or unreadable corrections retain old duties with visible pending review.

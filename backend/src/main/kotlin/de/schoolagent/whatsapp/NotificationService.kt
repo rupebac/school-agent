@@ -38,6 +38,7 @@ class NotificationService(
     private val inbox: de.schoolagent.domain.service.FamilyInboxService,
     private val copy: de.schoolagent.inbox.InboxCopyService,
     private val outbox: WhatsappOutbox,
+    private val policy: InstantNoticePolicy,
     private val diagnostics: IntegrationDiagnostics? = null,
 ) {
 
@@ -59,6 +60,7 @@ class NotificationService(
             trace(caseEntity, if (caseEntity.muted) DiagnosticOutcome.MUTED else DiagnosticOutcome.CLOSED)
             return
         }
+        if (!policy.eligible(caseEntity)) { trace(caseEntity, DiagnosticOutcome.EXPIRED); return }
         dispatch(caseEntity)
     }
 
@@ -66,9 +68,15 @@ class NotificationService(
     @Transactional
     fun notifySchoolChange(caseEntity: SchoolCase, change: String, details: String) {
         if (caseEntity.schoolUpdatePending) return
-        if (caseEntity.suppressInitialNotification || caseEntity.muted || caseEntity.importanceScore < 2) {
-            trace(caseEntity, when { caseEntity.suppressInitialNotification -> DiagnosticOutcome.QUIET_IMPORT
-                caseEntity.muted -> DiagnosticOutcome.MUTED; else -> DiagnosticOutcome.LOW_PRIORITY })
+        if (caseEntity.suppressInitialNotification) {
+            caseEntity.suppressInitialNotification = false
+            caseRepo.save(caseEntity)
+            trace(caseEntity, DiagnosticOutcome.QUIET_IMPORT)
+            return
+        }
+        if (!policy.eligible(caseEntity, schoolChange = true)) { trace(caseEntity, DiagnosticOutcome.EXPIRED); return }
+        if (caseEntity.muted || caseEntity.importanceScore < 2) {
+            trace(caseEntity, if (caseEntity.muted) DiagnosticOutcome.MUTED else DiagnosticOutcome.LOW_PRIORITY)
             return
         }
         val child = caseEntity.childId?.let { kids.findById(it).orElse(null)?.name } ?: "Family"
@@ -84,8 +92,10 @@ class NotificationService(
     }
 
     private fun dispatch(caseEntity: SchoolCase) {
+        val today = clock.instant().atZone(berlin).toLocalDate()
         val actions = actionRepo.findByCaseId(caseEntity.id)
-            .filter { it.status in listOf(ActionStatus.OPEN, ActionStatus.ASSIGNED, ActionStatus.IN_PROGRESS, ActionStatus.OVERDUE) }
+            .filter { it.status in listOf(ActionStatus.OPEN, ActionStatus.ASSIGNED, ActionStatus.IN_PROGRESS, ActionStatus.OVERDUE) &&
+                it.dueAt?.atZone(berlin)?.toLocalDate()?.isBefore(today) != true }
         val score = de.schoolagent.domain.enums.clampImportanceScore(caseEntity.importanceScore)
         if (score < 2) { trace(caseEntity, DiagnosticOutcome.LOW_PRIORITY); return }
         val baseKey = "decision:${caseEntity.id}:${inbox.revision(caseEntity.id)}:${caseEntity.isInfo()}"
@@ -137,7 +147,8 @@ class NotificationService(
             it.status in setOf(EventStatus.PLANNED, EventStatus.CONFIRMED) }?.let { details += "Reported on ${eventWhen(it)}" }
         if (!caseEntity.isInfo()) {
             val childNeeds = requirements.findByCaseId(caseEntity.id).filter {
-                it.required && it.status == de.schoolagent.domain.enums.RequirementStatus.OPEN
+                it.required && it.status == de.schoolagent.domain.enums.RequirementStatus.OPEN &&
+                    it.relevantOn?.isBefore(today) != true
             }
             val grouped = (actionable.map { it.dueAt?.atZone(berlin)?.toLocalDate()?.toString() ?: "undated" } +
                 childNeeds.map { it.relevantOn?.toString() ?: "undated" }).distinct()

@@ -288,7 +288,7 @@ class SchoolRecordIngestionService(
                 SchoolRecordKind.TIMETABLE_CHANGE -> EventType.TIMETABLE_CHANGE; else -> EventType.SCHOOL_REPORT }
             val event = events.findByDedupKey("evt:$key") ?: SchoolEvent(caseId = c.id, childId = c.childId, title = copy.title, eventType = type,
                 startTime = date.atStartOfDay(berlin).toInstant(), dedupKey = "evt:$key", createdAt = now)
-            event.title = copy.title; event.eventType = type
+            event.title = record.timetable?.let(de.schoolagent.events.TimetablePresentation::title) ?: copy.title; event.eventType = type
             event.startTime = date.atTime(record.time ?: java.time.LocalTime.MIDNIGHT).atZone(berlin).toInstant()
             event.endTime = record.endTime?.let { date.atTime(it).atZone(berlin).toInstant() }
             require(event.endTime == null || event.endTime!! > event.startTime) { "Invalid native school event time range" }
@@ -423,7 +423,7 @@ class SchoolRecordIngestionService(
         var success = true
         events.findByCaseId(caseId).forEach { event ->
             when {
-                event.eventType == EventType.SCHOOL_REPORT || event.status == EventStatus.CANCELLED -> calendar.removeProjection(event)
+                !event.eventType.isCalendarAppointment() || event.status == EventStatus.CANCELLED -> calendar.removeProjection(event)
                 oauth.isConfigured(event.childId) -> calendar.syncEvent(event)
             }
             if (event.googleSyncStatus == GoogleSyncStatus.ERROR) success = false

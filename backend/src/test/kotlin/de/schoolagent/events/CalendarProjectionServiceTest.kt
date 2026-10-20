@@ -225,4 +225,16 @@ class CalendarProjectionServiceTest {
         assertThat(e.googleSyncStatus).isEqualTo(GoogleSyncStatus.PENDING)
     }
 
+    @Test fun `timetable change notices are removed instead of creating calendar appointments`() {
+        val e = event("existing-google-event").apply { eventType = EventType.TIMETABLE_CHANGE; allDay = true }
+        service.syncEvent(e)
+        assertThat(calendar.inserted).isEmpty()
+        assertThat(calendar.updated).isEmpty()
+        assertThat(calendar.deleted).containsExactly("existing-google-event")
+        assertThat(e.googleEventId).isNull()
+        assertThat(e.googleSyncStatus).isEqualTo(GoogleSyncStatus.NOT_APPLICABLE)
+        service.syncEvent(e)
+        assertThat(calendar.deleted).hasSize(1)
+        assertThat(calendar.inserted).isEmpty()
+    }
 }

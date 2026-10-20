@@ -5,6 +5,17 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Notification/calendar follow-up: instant alerts now share date and archive checks
+before composition and delivery, including school corrections. First full manifests
+of legacy letters and first school-response observations establish quiet baselines;
+expired duties are not replayed with future announcements. Future changes and
+cancellations remain eligible without modifying family task completion. Timetable
+change notices stay in the inbox/WhatsApp, not calendar appointment lists. V35 queues
+removal of existing app-owned timetable projections through the normal retry worker;
+actual events keep their existing Google IDs. Validation: 488 backend tests, 89 frontend
+tests, production frontend build and privacy/secret scans pass. Deployment verification
+is pending.
+
 Portal reconciliation is implemented with additive migration V34:
 both providers share complete document manifests, immutable source history,
 current-evidence selection, guarded correction operations and completion rules.

@@ -355,4 +355,43 @@ class SchoolNoticeIngestionServiceTest {
         assertThat(c.classificationReview).isTrue()
         assertThat(actions.findByCaseId(c.id)).hasSize(1)
     }
+    @Test fun `first full legacy manifest is a quiet baseline even when new attachments are discovered`() {
+        val legacy = "Bring a workbook.".toByteArray()
+        val c = lifecycle.createCase(child.id, notice.title)
+        val hash = documents.put(legacy)
+        sources.save(Source(sourceType = SourceType.SCHULMANAGER_LETTER, externalId = notice.id,
+            dedupKey = de.schoolagent.common.DedupKeys.source(SourceType.SCHULMANAGER_LETTER,
+                "${child.id}:1:7:${notice.id}"), contentHash = hash, storageRef = hash,
+            mimeType = "text/plain", byteSize = legacy.size.toLong(), fetchStatus = FetchStatus.FETCHED, caseId = c.id))
+        lifecycle.transition(c, CaseStatus.INGESTING)
+        complete(c)
+        content = content + SchoolDocument("attachment", "Packing list", "text/plain", "Bring lunch.".toByteArray())
+        assertThat(service.sync(child.id, credentials, session, listOf(notice), false).changed).isEqualTo(1)
+        assertThat(c.schoolUpdatePending).isTrue()
+        assertThat(c.suppressInitialNotification).isTrue()
+        assertThat(item().lastSuccessAt).isNotNull()
+    }
+    @Test fun `first observation of an old form does not enqueue a school change`() {
+        sync()
+        val c = cases.findById(sources.findById(item().sourceId).orElseThrow().caseId!!).orElseThrow()
+        complete(c)
+        c.suppressInitialNotification = false
+        response = SchoolResponse(response = "PENDING", questionIds = listOf("choice"), deadline = now.minusSeconds(30 * 86400))
+        sync()
+        assertThat(c.schoolNotificationPending).isFalse()
+        assertThat(actions.findByDedupKey("school-response:${item().itemKey}")).isNotNull()
+    }
+
+    @Test fun `calendar cleanup selects old projected notices but never inserts unprojected timetable notices`() {
+        val c = lifecycle.createCase(child.id, "Timetable change")
+        val old = events.save(SchoolEvent(caseId = c.id, eventType = EventType.TIMETABLE_CHANGE,
+            title = "Change notice", startTime = now.minusSeconds(30 * 86400), dedupKey = "old-notice",
+            googleEventId = "app-owned-projection", googleSyncStatus = GoogleSyncStatus.PENDING))
+        events.save(SchoolEvent(caseId = c.id, eventType = EventType.TIMETABLE_CHANGE,
+            title = "Future notice", startTime = now.plusSeconds(86400), dedupKey = "new-notice"))
+        val pending = events.findPendingCalendarProjections(child.id, now, now,
+            org.springframework.data.domain.PageRequest.of(0, 50))
+        assertThat(pending).containsExactly(old.id)
+    }
+
 }

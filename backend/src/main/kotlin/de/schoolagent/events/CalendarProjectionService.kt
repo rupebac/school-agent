@@ -49,7 +49,7 @@ class CalendarProjectionService(
     @Transactional
     fun syncEvent(eventRaw: SchoolEvent) {
         val event = attachChild(eventRepo.lockForCalendarProjection(eventRaw.id).orElse(eventRaw))
-        if (event.eventType == de.schoolagent.domain.enums.EventType.SCHOOL_REPORT || event.status == EventStatus.CANCELLED) {
+        if (!event.eventType.isCalendarAppointment() || event.status == EventStatus.CANCELLED) {
             removeProjection(event)
             return
         }
@@ -88,7 +88,7 @@ class CalendarProjectionService(
     fun syncPendingEvent(id: java.util.UUID): Boolean {
         val event = eventRepo.lockForCalendarProjection(id).orElse(null) ?: return false
         if (event.googleSyncStatus !in setOf(GoogleSyncStatus.PENDING, GoogleSyncStatus.ERROR)) return false
-        if (event.status == EventStatus.CANCELLED || event.eventType == de.schoolagent.domain.enums.EventType.SCHOOL_REPORT) {
+        if (event.status == EventStatus.CANCELLED || !event.eventType.isCalendarAppointment()) {
             if (event.googleEventId == null) return false
             removeProjection(event)
             return event.googleSyncStatus == GoogleSyncStatus.NOT_APPLICABLE

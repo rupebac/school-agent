@@ -120,6 +120,9 @@ class SchoolNoticeIngestionService(
             items.save(item)
             return false
         }
+        // The first complete manifest for an adopted legacy letter establishes a baseline.
+        // New attachment/response metadata from an adapter upgrade is not a new school alert.
+        val baseline = item != null && item.lastSuccessAt == null
         val previous = item?.let { sources.findBySchoolItemKey(key).filterNot { s -> s.superseded } }.orEmpty()
         val material = item == null || (item.factHash != facts &&
             !onlyGeneratedHeaderChanged(credentials, notice, item, previous, parts))
@@ -128,7 +131,7 @@ class SchoolNoticeIngestionService(
         else if (material) {
             if (!c.schoolUpdatePending) c.schoolPreviousStatus = c.status.name
             c.schoolUpdatePending = true
-            c.suppressInitialNotification = false
+            c.suppressInitialNotification = baseline || c.suppressInitialNotification
             cases.save(c)
         }
         val selected = parts.map { part ->

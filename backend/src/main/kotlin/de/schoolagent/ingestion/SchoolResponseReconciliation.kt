@@ -77,7 +77,8 @@ class SchoolResponseReconciliation(
                 else if (c.status == CaseStatus.INFORMATION_ONLY) lifecycle.transition(c, CaseStatus.ACTION_REQUIRED, Actor.SYSTEM, "School response required")
             } else if (c.status in setOf(CaseStatus.ACTION_REQUIRED, CaseStatus.WAITING_FOR_PARENT))
                 lifecycle.transition(c, CaseStatus.COMPLETED, Actor.SYSTEM, "School confirmed the linked response")
-            c.schoolNotificationPending = !c.suppressInitialNotification
+            // First observation establishes school status; it must not replay old forms.
+            c.schoolNotificationPending = c.schoolNotificationPending || (previous != null && !c.suppressInitialNotification)
             cases.save(c)
         }
     }

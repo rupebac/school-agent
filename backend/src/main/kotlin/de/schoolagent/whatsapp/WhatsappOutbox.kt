@@ -24,7 +24,7 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
                      private val client: WhatsappClient, private val model: ModelRouter,
                      private val health: HealthTracker, private val clock: Clock,
                      private val inbox: de.schoolagent.domain.service.FamilyInboxService,
-                     private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null,
+                     private val policy: InstantNoticePolicy,
                      private val diagnostics: IntegrationDiagnostics? = null) {
     private val json = ObjectMapper()
     private val running = java.util.concurrent.atomic.AtomicBoolean()
@@ -81,7 +81,7 @@ class WhatsappOutbox(private val rows: NotificationRepository, private val recei
             val c = cases.findById(row.caseId!!).orElse(null) ?: return false
             val revision = inbox.revision(c.id)
             val schoolChange = row.dedupKey.startsWith("school-change:${c.id}:$revision:")
-            if (!schoolChange && relevance?.isArchived(c) == true) return false
+            if (!policy.eligible(c, schoolChange)) return false
             return user.instantEnabled && c.importanceScore >= 2 && !c.muted && !c.schoolUpdatePending &&
                 (user.role == "ADMIN" || c.childId == null || user.kids.any { it.id == c.childId }) &&
                 (schoolChange || (!c.isClosed() && row.dedupKey.startsWith("decision:${c.id}:$revision:${c.isInfo()}:")))

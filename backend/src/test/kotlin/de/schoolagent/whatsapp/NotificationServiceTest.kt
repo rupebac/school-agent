@@ -27,7 +27,10 @@ class NotificationServiceTest {
     private val diagnostics = mockk<IntegrationDiagnostics>(relaxed = true)
     private val parent = AppUser(name = "morgan", displayName = "Morgan", passwordHash = "x", whatsappNumber = "+49123")
     private val clock = Clock.fixed(Instant.parse("2026-10-02T16:00:00Z"), ZoneOffset.UTC)
-    private val service = NotificationService(config, mockk(relaxed = true), actions, events, cases, users, kids, clock, mockk(relaxed = true), inbox, copy, outbox, diagnostics)
+    private val needs = mockk<ChildRequirementRepository>(relaxed = true)
+    private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
+    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock)
+    private val service = NotificationService(config, mockk(relaxed = true), actions, events, cases, users, kids, clock, needs, inbox, copy, outbox, policy, diagnostics)
     private fun case(score: Int = 4) = SchoolCase(title = "School copying fee by 5 October", summary = "Prepare €17.20", importanceScore = score, status = CaseStatus.ACTION_REQUIRED)
     init {
         every { cases.save(any<SchoolCase>()) } answers { firstArg() }
@@ -165,4 +168,44 @@ class NotificationServiceTest {
         assertThat(message.captured.params.joinToString()).contains("Cancelled", "Mathematics exam", "20.11.2026")
         verify(exactly = 0) { copy.refresh(any()) }
     }
+    @Test fun `old corrections and overdue duties never queue alerts but future changes still do`() {
+        val c = case()
+        every { actions.findByCaseId(c.id) } returns listOf(ParentAction(caseId = c.id,
+            title = "Return expired form", dueAt = clock.instant().minusSeconds(30 * 86400), dedupKey = "old"))
+        service.notifySchoolChange(c, "School update", "Updated attachment")
+        service.notifyDecision(c)
+        verify(exactly = 0) { outbox.enqueue(any(), any(), any(), any(), any(), any(), any()) }
+        every { actions.findByCaseId(c.id) } returns emptyList()
+        every { events.findByCaseId(c.id) } returns listOf(SchoolEvent(caseId = c.id, title = "Exam",
+            eventType = EventType.EXAM, status = EventStatus.CANCELLED,
+            startTime = clock.instant().plusSeconds(86400), allDay = true, dedupKey = "future"))
+        c.status = CaseStatus.CANCELLED
+        service.notifySchoolChange(c, "Cancelled", "Future exam cancelled")
+        verify(exactly = 1) { outbox.enqueue(any(), any(), any(), c.id, any(), any(), any()) }
+    }
+    @Test fun `archived undated corrections and first manifest updates remain quiet`() {
+        val c = case()
+        every { relevance.isArchived(c) } returns true
+        service.notifySchoolChange(c, "School update", "Old letter")
+        every { relevance.isArchived(c) } returns false
+        c.suppressInitialNotification = true
+        service.notifySchoolChange(c, "School update", "Baseline")
+        assertThat(c.suppressInitialNotification).isFalse()
+        verify(exactly = 0) { outbox.enqueue(any(), any(), any(), any(), any(), any(), any()) }
+        service.notifySchoolChange(c, "School update", "Actual subsequent change")
+        verify(exactly = 1) { outbox.enqueue(any(), any(), any(), c.id, any(), any(), any()) }
+    }
+
+    @Test fun `future event announcement does not repeat an expired registration duty`() {
+        val c = case()
+        every { actions.findByCaseId(c.id) } returns listOf(ParentAction(caseId = c.id, title = "Old registration",
+            dueAt = clock.instant().minusSeconds(30 * 86400), dedupKey = "registration"))
+        every { events.findByCaseId(c.id) } returns listOf(SchoolEvent(caseId = c.id, title = "Future event",
+            eventType = EventType.PARENT_EVENT, startTime = clock.instant().plusSeconds(86400), dedupKey = "future"))
+        service.notifyDecision(c)
+        val message = slot<WaTemplates.Message>()
+        verify { outbox.enqueue(any(), any(), capture(message), c.id, any(), any(), any()) }
+        assertThat(message.captured.params.joinToString()).doesNotContain("Old registration", "By 02.09.2026")
+    }
+
 }

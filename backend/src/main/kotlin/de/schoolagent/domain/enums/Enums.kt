@@ -60,7 +60,10 @@ enum class FormAccessStatus { ACCESSIBLE, LOGIN_REQUIRED, UNREACHABLE, UNSUPPORT
 /** SchoolEvent types, spec §22/§28. */
 enum class EventType {
     SCHOOL_EVENT, DEADLINE, EXAM, PARENT_EVENT,
-    BRING_ITEM, PAYMENT, TIMETABLE_CHANGE, MUSIC_EVENT, SCHOOL_REPORT,
+    BRING_ITEM, PAYMENT, TIMETABLE_CHANGE, MUSIC_EVENT, SCHOOL_REPORT;
+
+    /** Reports and change notices describe school activity; they are not appointments. */
+    fun isCalendarAppointment() = this != SCHOOL_REPORT && this != TIMETABLE_CHANGE
 }
 
 enum class EventStatus { PLANNED, CONFIRMED, CANCELLED, MOVED }

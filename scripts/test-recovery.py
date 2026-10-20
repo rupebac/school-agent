@@ -26,6 +26,10 @@ with tempfile.TemporaryDirectory(prefix='school-recovery-test-') as temporary:
     (deploy / 'seccomp_profile.json').write_text('{"defaultAction":"SCMP_ACT_ERRNO"}')
     (deploy / 'api-data').mkdir()
     (deploy / 'api-data' / 'synthetic.txt').write_text('before')
+    # Exercise the entrypoint's temporary socket-only server before final TCP startup.
+    (deploy / 'initialization.sql').write_text(
+        "SELECT pg_sleep(2); CREATE TABLE initialization_probe(value text); "
+        "INSERT INTO initialization_probe VALUES ('ready');\n")
     (deploy / 'docker-compose.yml').write_text('''services:
   postgres:
     image: postgres:17
@@ -33,7 +37,9 @@ with tempfile.TemporaryDirectory(prefix='school-recovery-test-') as temporary:
       POSTGRES_USER: schoolagent
       POSTGRES_DB: schoolagent
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes: [pg:/var/lib/postgresql/data]
+    volumes:
+      - pg:/var/lib/postgresql/data
+      - ./initialization.sql:/docker-entrypoint-initdb.d/initialization.sql:ro
   school-api:
     image: postgres:17
     command: [sleep, infinity]
@@ -61,9 +67,14 @@ volumes:
     try:
         run(['docker','compose','up','-d'])
         for _ in range(60):
-            if run(['docker','compose','exec','-T','postgres','pg_isready','-U','schoolagent'],check=False).returncode == 0:
+            # The bootstrap server accepts Unix-socket connections before initialization
+            # finishes. Only the final server listens on TCP.
+            if run(['docker','compose','exec','-T','postgres','pg_isready','-h','127.0.0.1','-U','schoolagent','-d','schoolagent'],check=False).returncode == 0:
                 break
             time.sleep(0.5)
+        else:
+            raise AssertionError('Recovery fixture PostgreSQL did not finish initialization')
+        assert sql('select value from initialization_probe') == 'ready'
         sql("create table recovery_probe(value text); insert into recovery_probe values ('before');")
         snapshot = Path(run(['./backup-full.sh']).stdout.strip())
         tags = [s['image'] for s in json.loads((snapshot / 'rollback.json').read_text())['services'].values()]

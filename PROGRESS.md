@@ -5,6 +5,10 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+The recovery CI fixture waits for PostgreSQL's final TCP server instead of the
+temporary initialization socket. A delayed initialization fixture reproduces the old
+readiness race and verifies initialization completes before backup/restore checks.
+
 WhatsApp Done buttons implemented on 2026-10-20: existing individual action-letter
 templates gain a localized quick reply alongside Open letter, without new template
 names. Buttons bind to the original recipient and message, recheck access and the

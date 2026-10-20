@@ -31,7 +31,14 @@ manual.
 Elternportal populated homework, substitution headers, noticeboard structure and
 document routes were inspected with authorized read-only listing requests. Schulmanager
 contracts were inspected in its public web client and tested with synthetic API
-fixtures. Real account availability remains independently reported by each feed.
+fixtures. Authorized live reads verified `letters/get-letter-for-reading` with nested
+student identities and `messenger/get-messages-by-subscription` with string subscription
+IDs; numeric subscription IDs produce a provider error. Receipt metadata comes from
+the child-scoped letter list when the reading endpoint omits it. The generated Sent
+header is excluded from material-change detection to preserve legacy Done/read state.
+The tested homework endpoint currently returns a provider error for the connected
+account; its feed reports failure and preserves existing records. Real account
+availability remains independently reported by each feed.
 No live answers or consent choices were submitted during discovery.
 
 Acquisition checks at most 30 new items and 10 existing items per notice feed per
@@ -51,7 +58,9 @@ without immediate per-assignment WhatsApp messages or invented calendar events.
 Material updates preserve completed unrelated tasks and existing event/Calendar IDs.
 Unknown or unreadable corrections retain old duties with visible pending review.
 Cosmetic short-PDF regeneration preserves Done/read identity. For larger PDFs the
-comparison is conservative. Current original/OCR inputs and operation quotes are
+comparison is conservative. Downloads retain originals up to 16 MiB per part and
+32 MiB per complete notice; extraction/rendering remains capped at 8 MiB. Larger
+originals use byte identity without parsing. Current original/OCR inputs and operation quotes are
 validated before correction application; oversized or unresolved inputs stay in review.
 School status and prior documents are inspectable in the bilingual detail view.
 

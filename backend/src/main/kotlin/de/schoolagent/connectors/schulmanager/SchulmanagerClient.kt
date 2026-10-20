@@ -34,6 +34,7 @@ class SchulmanagerSession(
     private val institutionId: String
     private val selfId: String?
     private var storageUrl: String? = null
+    private val listedStatuses = mutableMapOf<Pair<String, String>, JsonNode>()
     private val messages = SchulmanagerMessages(::optionalCall)
     // The public web client performs a separate letters/confirm call after fetching details.
     override val canRefreshDocuments = true
@@ -82,9 +83,10 @@ class SchulmanagerSession(
             val more = page.size() == 16
             val batch = if (more) page.take(15) else page.toList()
             for (row in batch) {
-                if (row.path("studentStatuses").none { it.path("studentId").asText() == studentId }) continue
+                val status = row.path("studentStatuses").singleOrNull { matchesStudent(it, studentId!!) } ?: continue
                 val id = row.path("id").asText()
                 if (id.isBlank()) throw SchoolConnectionException("Schulmanager returned a letter without an ID")
+                listedStatuses[id to studentId!!] = status
                 notices[id] = SchoolNotice(
                     id, row.path("title").asText("School letter"),
                     parseDate(row.path("createdAt").asText()), "$BASE_URL/#/modules/letters/view/$id",
@@ -110,21 +112,15 @@ class SchulmanagerSession(
     override fun details(notice: SchoolNotice, studentId: String?): SchoolNoticeDetails {
         requireStudent(studentId)
         if (notice.kind == SchoolNoticeKind.MESSAGE) return messages.details(notice, ::downloadAttachment)
-        val detail = call("main", "poqa", mapOf(
-            "action" to mapOf("model" to "modules/letters/letter", "action" to "findByPk", "parameters" to listOf(
-                notice.id.toLong(), mapOf("include" to listOf(
-                    mapOf("association" to "attachments", "required" to false, "attributes" to listOf("id", "filename", "file", "contentType", "inline", "letterId")),
-                    mapOf("association" to "studentStatuses", "required" to true, "where" to mapOf("studentId" to mapOf("\$in" to listOf(studentId!!.toLong())))),
-                    mapOf("association" to "questions", "required" to false),
-                )),
-            )), "uiState" to "main.modules.letters.view.details",
-        ))
-        if (!detail.isObject || detail.path("studentStatuses").none { it.path("studentId").asText() == studentId }) {
+        val detail = call("letters", "get-letter-for-reading", mapOf("letterId" to notice.id.toLong()))
+        val status = detail.path("studentStatuses").singleOrNull { matchesStudent(it, studentId!!) }
+        if (!detail.isObject || detail.path("id").asText() != notice.id || status == null) {
             throw SchoolConnectionException("Letter is not available for the selected child")
         }
+        val sentAt = parseDate(detail.path("sentDate").asText()) ?: notice.receivedAt
         val text = buildString {
             appendLine(detail.path("title").asText(notice.title))
-            appendLine("Sent: ${detail.path("sentDate").asText()}")
+            appendLine("Sent: ${sentAt ?: ""}")
             appendLine(de.schoolagent.connectors.school.SchoolText.fromHtml(detail.path("text").asText()))
             detail.path("answerDeadline").takeIf { !it.isNull && !it.isMissingNode }?.let { appendLine("Response deadline: ${it.asText()}") }
             for (question in detail.path("questions")) {
@@ -136,12 +132,13 @@ class SchulmanagerSession(
                 }
             }
         }
-        val documents = mutableListOf(SchoolDocument("letter", notice.title, "text/plain", text.toByteArray(Charsets.UTF_8), sentAt = parseDate(detail.path("sentDate").asText())))
+        val documents = mutableListOf(SchoolDocument("letter", notice.title, "text/plain", text.toByteArray(Charsets.UTF_8), sentAt = sentAt))
         documents += detail.path("attachments").map(::downloadAttachment)
-        val status = detail.path("studentStatuses").single { it.path("studentId").asText() == studentId }
         val questions = detail.path("questions")
         val hasQuestions = questions.isArray && !questions.isEmpty
-        val read = status.hasNonNull("readTimestamp")
+        // The reading endpoint omits receipt metadata; the child-scoped list supplies it.
+        val receiptStatus = status.takeIf { it.has("readTimestamp") } ?: listedStatuses[notice.id to studentId!!]
+        val read = receiptStatus?.hasNonNull("readTimestamp") == true
         val deadlineText = detail.path("answerDeadline").asText(null)
         val deadlineDay = deadlineText?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
         val deadline = deadlineText?.let {
@@ -154,7 +151,7 @@ class SchulmanagerSession(
             status.path("formData").hasNonNull(it.path("id").asText())
         } else 0
         return SchoolNoticeDetails(documents, SchoolResponse(
-            receipt = if (!status.has("readTimestamp")) "UNKNOWN" else if (read) "ACKNOWLEDGED" else "PENDING",
+            receipt = if (receiptStatus?.has("readTimestamp") != true) "UNKNOWN" else if (read) "ACKNOWLEDGED" else "PENDING",
             response = when {
                 !questions.isArray -> "UNKNOWN"
                 !hasQuestions -> "NOT_REQUIRED"
@@ -169,6 +166,13 @@ class SchulmanagerSession(
             answeredQuestions = if (hasQuestions) answered else null,
             deadlineAllDay = deadlineDay != null,
         ))
+    }
+
+    private fun matchesStudent(status: JsonNode, studentId: String): Boolean {
+        val direct = status.path("studentId").asText(null)
+        val nested = status.path("student").path("id").asText(null)
+        return (direct != null || nested != null) && (direct == null || direct == studentId) &&
+            (nested == null || nested == studentId)
     }
 
     private fun downloadAttachment(attachment: JsonNode): SchoolDocument {
@@ -232,7 +236,7 @@ class SchulmanagerSession(
         response.body().use { stream ->
             if (response.statusCode() != 200) throw SchoolConnectionException("Schulmanager attachment download failed (HTTP ${response.statusCode()})")
             val bytes = stream.readNBytes(MAX_ATTACHMENT_BYTES + 1)
-            if (bytes.size > MAX_ATTACHMENT_BYTES) throw SchoolConnectionException("Schulmanager attachment exceeds 8 MB")
+            if (bytes.size > MAX_ATTACHMENT_BYTES) throw SchoolConnectionException("Schulmanager attachment exceeds 16 MiB")
             return bytes
         }
     }
@@ -241,9 +245,9 @@ class SchulmanagerSession(
 
     companion object {
         const val BASE_URL = "https://login.schulmanager-online.de"
-        // API compatibility version from the live web client, verified September 2026.
-        const val BUNDLE_VERSION = "fd1f308791"
-        const val MAX_ATTACHMENT_BYTES = de.schoolagent.documents.TextExtractor.MAX_INPUT_BYTES
+        // API compatibility version from the live web client, verified October 2026.
+        const val BUNDLE_VERSION = "d0ba031273"
+        const val MAX_ATTACHMENT_BYTES = SchoolDocument.MAX_DOWNLOAD_BYTES
         fun passwordHash(password: String, salt: String): String {
             val spec = PBEKeySpec(password.toCharArray(), salt.toByteArray(Charsets.UTF_8), 99999, 4096)
             return try { SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512").generateSecret(spec).encoded.joinToString("") { "%02x".format(it) } }

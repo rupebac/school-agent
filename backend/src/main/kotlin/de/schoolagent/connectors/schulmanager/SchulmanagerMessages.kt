@@ -9,6 +9,7 @@ import java.time.Instant
  * This adapter exclusively uses the two read endpoints.
  */
 internal class SchulmanagerMessages(private val call: (String, String, Any) -> JsonNode?) {
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
     private val messages = mutableMapOf<String, JsonNode>()
 
     fun read(identity: SchoolIdentity, studentId: String, enabled: Boolean, selfId: String?): SchoolNoticeFeed {
@@ -16,6 +17,7 @@ internal class SchulmanagerMessages(private val call: (String, String, Any) -> J
         if (identity.students.singleOrNull()?.id != studentId)
             return unavailable("This account has multiple children; messages need explicit child attribution before import")
         if (selfId?.toLongOrNull() == null) return unavailable("The account sender identity could not be verified")
+        var stage = "subscriptions"
         return try {
             val subscriptions = call("messenger", "get-subscriptions",
                 mapOf("all" to true, "includeArchived" to true, "reason" to "initial"))
@@ -29,9 +31,12 @@ internal class SchulmanagerMessages(private val call: (String, String, Any) -> J
                 require(subscriptionId.toLongOrNull() != null && threadId.toLongOrNull() != null)
                 var before: Long? = null
                 for (pageIndex in 0 until 5) {
+                    stage = "message-page"
                     val page = call("messenger", "get-messages-by-subscription",
-                        mapOf("subscriptionId" to subscriptionId.toLong(), "before" to before, "loadAll" to false))
+                        // Subscription IDs are decimal strings in the parent web client contract.
+                        mapOf("subscriptionId" to subscriptionId, "before" to before, "loadAll" to false))
                         ?: throw SchoolConnectionException("Message page is unavailable")
+                    stage = "message-shape"
                     val rows = page.path("messages")
                     require(rows.isArray && rows.size() <= 200 && page.path("hasMoreMessages").isBoolean)
                     for (row in rows) {
@@ -58,7 +63,8 @@ internal class SchulmanagerMessages(private val call: (String, String, Any) -> J
             require(notices.map { it.id }.distinct().size == notices.size)
             SchoolNoticeFeed(SchoolNoticeKind.MESSAGE, SchoolFeedStatus.AVAILABLE, notices,
                 "Checks the latest 50 conversations, up to five pages each; older imported messages are retained")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.warn("School message read failed stage={} errorType={}", stage, e.javaClass.simpleName)
             SchoolNoticeFeed(SchoolNoticeKind.MESSAGE, SchoolFeedStatus.FAILED,
                 message = "Could not verify the message inbox; existing messages are retained")
         }

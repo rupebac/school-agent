@@ -28,7 +28,12 @@ data class SchoolNotice(val id: String, val title: String, val receivedAt: Insta
                         val changeMarker: String? = null, val kind: SchoolNoticeKind = SchoolNoticeKind.LETTER)
 data class SchoolNoticeFeed(val kind: SchoolNoticeKind, val status: SchoolFeedStatus,
                            val notices: List<SchoolNotice> = emptyList(), val message: String? = null)
-data class SchoolDocument(val id: String, val title: String, val mimeType: String, val bytes: ByteArray, val sentAt: Instant? = null)
+data class SchoolDocument(val id: String, val title: String, val mimeType: String, val bytes: ByteArray, val sentAt: Instant? = null) {
+    companion object {
+        // Originals can exceed the extraction budget; those remain available for manual review.
+        const val MAX_DOWNLOAD_BYTES = 16 * 1024 * 1024
+    }
+}
 data class SchoolResponse(
     val receipt: String = "UNKNOWN",
     val response: String = "UNKNOWN",

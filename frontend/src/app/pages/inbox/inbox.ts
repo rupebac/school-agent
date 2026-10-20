@@ -249,7 +249,7 @@ export class InboxPage implements OnInit {
 
   done(row: InboxItem): void {
     if (row.informationOnly) this.cases.markRead(row.caseId, !row.read, row.revision);
-    else this.cases.complete(row.caseId, () => { this.actions.refresh(); this.requirements.refresh(); });
+    else this.cases.complete(row.caseId, () => { this.actions.refresh(); this.requirements.refresh(); }, row.revision);
   }
 
   showDone(row: InboxItem): boolean {

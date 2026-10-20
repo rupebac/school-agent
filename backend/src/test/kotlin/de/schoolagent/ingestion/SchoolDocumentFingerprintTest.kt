@@ -25,8 +25,15 @@ class SchoolDocumentFingerprintTest {
             .isEqualTo(SchoolDocumentFingerprint.of(metadata, "application/pdf"))
             .isNotEqualTo(SchoolDocumentFingerprint.of(visual, "application/pdf"))
     }
+    @Test fun `large originals use byte identity without raising the extraction budget`() {
+        val bytes = ByteArray(8 * 1024 * 1024 + 1)
+        assertThat(SchoolDocumentFingerprint.of(bytes, "application/pdf"))
+            .isEqualTo(de.schoolagent.documents.FileSystemDocumentStore.sha256(bytes))
+        assertThatThrownBy { de.schoolagent.documents.TextExtractor.fromPdf(bytes) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
     @Test fun `oversized documents fail before parsing`() {
-        assertThatThrownBy { SchoolDocumentFingerprint.of(ByteArray(8 * 1024 * 1024 + 1), "application/pdf") }
+        assertThatThrownBy { SchoolDocumentFingerprint.of(ByteArray(16 * 1024 * 1024 + 1), "application/pdf") }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 }

@@ -21,10 +21,12 @@ class SchulmanagerAdditionalFeedsTest {
 
     @Test fun `message import uses read calls only and excludes messages sent by the connected parent`() {
         val calls = mutableListOf<String>()
-        val reader = SchulmanagerMessages { module, endpoint, _ ->
+        val reader = SchulmanagerMessages { module, endpoint, parameters ->
             assertThat(module).isEqualTo("messenger"); calls += endpoint
+            if (endpoint == "get-messages-by-subscription")
+                assertThat((parameters as Map<*, *>)["subscriptionId"]).isEqualTo("1")
             json.readTree(when (endpoint) {
-                "get-subscriptions" -> """[{"id":1,"thread":{"id":20,"subject":"Trip arrangements","lastMessageTimestamp":"2026-10-20T10:00:00Z"}}]"""
+                "get-subscriptions" -> """[{"id":"1","thread":{"id":20,"subject":"Trip arrangements","lastMessageTimestamp":"2026-10-20T10:00:00Z"}}]"""
                 "get-messages-by-subscription" -> """{"hasMoreMessages":false,"messages":[
                     {"id":2,"threadId":20,"sender":{"id":11},"text":"Bring a workbook.","createdAt":"2026-10-20T09:00:00Z","attachments":[]},
                     {"id":3,"threadId":20,"sender":{"id":10},"text":"Thank you.","createdAt":"2026-10-20T10:00:00Z","attachments":[]}]}"""

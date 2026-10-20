@@ -67,7 +67,8 @@ class HttpElternportalClient(private val http: de.schoolagent.crawler.PublicHttp
 
     override fun downloadFile(brief: PortalBrief): ByteArray {
         ensureSession()
-        val response = http.request("$baseUrl/aktuelles/get_file/?repo=${brief.repoId}&csrf=${brief.csrf}")
+        val response = http.request("$baseUrl/aktuelles/get_file/?repo=${brief.repoId}&csrf=${brief.csrf}",
+            maxBytes = de.schoolagent.connectors.school.SchoolDocument.MAX_DOWNLOAD_BYTES)
         if (response.status !in 200..299) throw ElternportalException("download failed: HTTP ${response.status}")
         return response.bytes
     }

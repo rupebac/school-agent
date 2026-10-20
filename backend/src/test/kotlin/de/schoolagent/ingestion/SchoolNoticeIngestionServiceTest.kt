@@ -201,6 +201,50 @@ class SchoolNoticeIngestionServiceTest {
         assertThat(revisions.findByItemKeyOrderByVersionDesc(item().itemKey).first().material).isFalse()
     }
 
+    @Test fun `generated sent header changes preserve adopted letters and family completion`() {
+        val legacyBytes = "School trip\nSent: 2026-09-25\nBring a workbook.\n".toByteArray()
+        val c = lifecycle.createCase(child.id, notice.title)
+        val hash = documents.put(legacyBytes)
+        val old = sources.save(Source(sourceType = SourceType.SCHULMANAGER_LETTER, externalId = notice.id,
+            dedupKey = de.schoolagent.common.DedupKeys.source(SourceType.SCHULMANAGER_LETTER,
+                "${child.id}:1:7:${notice.id}"), contentHash = hash, storageRef = hash,
+            mimeType = "text/plain", byteSize = legacyBytes.size.toLong(), fetchStatus = FetchStatus.FETCHED, caseId = c.id))
+        lifecycle.transition(c, CaseStatus.INGESTING)
+        complete(c)
+        val familyRevision = inbox.revision(c.id)
+        content = listOf(content.single().copy(bytes = "School trip\nSent: 2026-09-25T08:00:00Z\nBring a workbook.\n".toByteArray()))
+        assertThat(sync().changed).isZero()
+        assertThat(c.status).isEqualTo(CaseStatus.COMPLETED)
+        assertThat(inbox.revision(c.id)).isEqualTo(familyRevision)
+        assertThat(sources.findById(old.id).orElseThrow().superseded).isTrue()
+        // Also handle items adopted by the preceding release, before header normalization.
+        item().also { it.factHash = "legacy-fingerprint"; items.save(it) }
+        content = listOf(content.single().copy(bytes = "School trip\nSent: \nBring a workbook.\n".toByteArray()))
+        assertThat(sync().changed).isZero()
+        assertThat(inbox.revision(c.id)).isEqualTo(familyRevision)
+        content = listOf(content.single().copy(bytes = "School trip\nSent: \nBring a different workbook.\n".toByteArray()))
+        assertThat(sync().changed).isEqualTo(1)
+        assertThat(c.schoolUpdatePending).isTrue()
+    }
+
+    @Test fun `oversized legacy originals retain identity and can be checked without extraction`() {
+        val legacyBytes = ByteArray(8 * 1024 * 1024 + 1)
+        val c = lifecycle.createCase(child.id, notice.title)
+        val hash = documents.put(legacyBytes)
+        val old = sources.save(Source(sourceType = SourceType.SCHULMANAGER_LETTER, externalId = notice.id,
+            dedupKey = de.schoolagent.common.DedupKeys.source(SourceType.SCHULMANAGER_LETTER,
+                "${child.id}:1:7:${notice.id}"), contentHash = hash, storageRef = hash,
+            mimeType = "application/pdf", byteSize = legacyBytes.size.toLong(), fetchStatus = FetchStatus.FETCHED, caseId = c.id))
+        lifecycle.transition(c, CaseStatus.INGESTING)
+        complete(c)
+        content = listOf(SchoolDocument("letter", notice.title, "application/pdf", legacyBytes))
+        val result = sync()
+        assertThat(result.failed).isZero()
+        assertThat(result.changed).isZero()
+        assertThat(item().sourceId).isEqualTo(old.id)
+        assertThat(c.status).isEqualTo(CaseStatus.COMPLETED)
+    }
+
     @Test fun `an incomplete replacement keeps all previously applied parts`() {
         content = content + SchoolDocument("attachment", "Instructions", "text/plain", "Original attached details.".toByteArray())
         sync()

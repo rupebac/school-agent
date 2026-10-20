@@ -132,6 +132,17 @@ describe('Inbox background refresh', () => {
     expect(cases.error()).toBe('School information changed');
   });
 
+  it('keeps the clicked card revision when a newer store response has arrived', () => {
+    const { fixture, http } = setup();
+    const page = fixture.componentInstance;
+    const displayed = { ...page.items()[0], revision: 'displayed-revision' };
+    TestBed.inject(Cases).cases.update(list => list.map(c => ({ ...c, revision: 'newer-revision' })));
+    page.done(displayed);
+    const request = http.expectOne('/api/cases/one/complete');
+    expect(request.request.body.revision).toBe('displayed-revision');
+    request.flush({ detail: 'School information changed' }, { status: 409, statusText: 'Conflict' });
+  });
+
   it('collapses and reopens sections without remounting cards or sharing collapse state across children', async () => {
     const { fixture, cards } = setup();
     const original = cards();

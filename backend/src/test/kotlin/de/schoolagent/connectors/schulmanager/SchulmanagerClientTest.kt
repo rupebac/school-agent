@@ -35,10 +35,10 @@ class SchulmanagerClientTest {
                             offsets.add(offset)
                             if (offset == 0) (1..16).map { letter(it, if (it == 2) 8 else 7) } else listOf(letter(16), letter(17))
                         }
-                        "poqa" -> {
-                            assertThat(req.path("parameters").path("action").path("action").asText()).isEqualTo("findByPk")
-                            assertThat(req.toString()).contains("studentId", "7", "modules/letters/letter")
-                            mapOf("id" to 1, "title" to "Trip", "text" to "<p>Bring a lunch.</p><p>Meet at school.</p>", "sentDate" to "2026-09-25", "answerDeadline" to "2026-10-01", "studentStatuses" to listOf(mapOf("studentId" to 7)),
+                        "get-letter-for-reading" -> {
+                            assertThat(req.path("parameters").path("letterId").asInt()).isEqualTo(1)
+                            assertThat(req.path("moduleName").asText()).isEqualTo("letters")
+                            mapOf("id" to 1, "title" to "Trip", "text" to "<p>Bring a lunch.</p><p>Meet at school.</p>", "answerDeadline" to "2026-10-01", "studentStatuses" to listOf(mapOf("student" to mapOf("id" to 7), "formData" to emptyMap<String, Any>())),
                                 "questions" to listOf(mapOf("id" to 1, "text" to "May your child attend?")),
                                 "attachments" to listOf(mapOf("id" to 12, "filename" to "letter.pdf", "contentType" to "application/pdf", "file" to json.writeValueAsString(listOf(1, "letters", "file", "secret-key", "application/pdf", 15, "letter.pdf")))))
                         }
@@ -61,11 +61,15 @@ class SchulmanagerClientTest {
                 assertThat(letters).hasSize(16)
                 assertThat(letters.map { it.id }).doesNotContain("2").doesNotHaveDuplicates()
                 assertThat(offsets).containsExactly(0, 15)
-                val parts = session.documents(letters.first(), "7")
+                val details = session.details(letters.first(), "7")
+                val parts = details.documents
+                assertThat(details.response?.receipt).isEqualTo("PENDING")
+                assertThat(parts[0].sentAt).isEqualTo(letters.first().receivedAt)
+                assertThatThrownBy { session.details(letters.first(), "8") }.isInstanceOf(SchoolConnectionException::class.java)
                 assertThat(parts).hasSize(2)
                 assertThat(String(parts[0].bytes)).contains("Bring a lunch.\n", "School response requested: May your child attend?", "2026-10-01").doesNotContain("secret-key")
                 assertThat(String(parts[1].bytes)).startsWith("%PDF-")
-                assertThat(calls).containsOnly("get-letters", "poqa", "get-remote-storage-url")
+                assertThat(calls).containsOnly("get-letters", "get-letter-for-reading", "get-remote-storage-url")
             }
         } finally { server.stop(0) }
     }

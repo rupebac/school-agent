@@ -7,7 +7,8 @@ import org.apache.pdfbox.Loader
 /** Never ignore images/links while deciding whether new bytes are merely PDF metadata. */
 object SchoolDocumentFingerprint {
     fun of(bytes: ByteArray, mime: String): String {
-        require(bytes.size <= TextExtractor.MAX_INPUT_BYTES) { "School document exceeds size limit" }
+        require(bytes.size <= de.schoolagent.connectors.school.SchoolDocument.MAX_DOWNLOAD_BYTES) { "School document exceeds size limit" }
+        if (bytes.size > TextExtractor.MAX_INPUT_BYTES) return FileSystemDocumentStore.sha256(bytes)
         if (mime == "application/pdf") {
             // Larger/unrenderable documents conservatively retain byte identity.
             return runCatching {

@@ -80,9 +80,10 @@ class SchoolNoticeIngestionService(
             try {
                 val detail = session.details(notice, credentials.studentId)
                 require(detail.documents.isNotEmpty() && detail.documents.size <= 40) { "Invalid school document manifest" }
+                require(detail.documents.all { it.bytes.size <= SchoolDocument.MAX_DOWNLOAD_BYTES }) { "School document exceeds size limit" }
                 require(detail.documents.sumOf { it.bytes.size.toLong() } <= 32L * 1024 * 1024) { "School manifest exceeds size limit" }
                 require(detail.documents.map { it.id }.distinct().size == detail.documents.size) { "Duplicate document identity" }
-                val parts = detail.documents.map { Part(it, FileSystemDocumentStore.sha256(it.bytes), SchoolDocumentFingerprint.of(it.bytes, it.mimeType)) }
+                val parts = detail.documents.map { Part(it, FileSystemDocumentStore.sha256(it.bytes), fingerprint(credentials, notice, it.id, it.bytes, it.mimeType)) }
                 // Complete bytes are persisted outside the database transaction. A failed commit leaves only
                 // content-addressed orphan blobs, never a partial manifest or a half-updated case.
                 parts.forEach { documents.put(it.document.bytes) }
@@ -120,7 +121,8 @@ class SchoolNoticeIngestionService(
             return false
         }
         val previous = item?.let { sources.findBySchoolItemKey(key).filterNot { s -> s.superseded } }.orEmpty()
-        val material = item == null || item.factHash != facts
+        val material = item == null || (item.factHash != facts &&
+            !onlyGeneratedHeaderChanged(credentials, notice, item, previous, parts))
         val version = (item?.version ?: 0) + 1
         if (item == null) { c.suppressInitialNotification = initial; cases.save(c) }
         else if (material) {
@@ -208,8 +210,11 @@ class SchoolNoticeIngestionService(
                 s.schoolItemKey = key; s.schoolVersion = 1
                 s.revisionIdentity = s.id.toString(); s.factHash = s.contentHash
                 s.externalId = "${notice.id}:$partId"; sources.save(s)
-                val bytes = s.storageRef?.let(documents::get)
-                Triple(partId, s, bytes?.let { SchoolDocumentFingerprint.of(it, s.mimeType.orEmpty()) } ?: s.contentHash)
+                // Legacy originals may predate the current acquisition limit. Adopt their identity
+                // without loading/rendering oversized content; a refresh still enforces the limit.
+                val bytes = if ((s.byteSize ?: 0) <= de.schoolagent.documents.TextExtractor.MAX_INPUT_BYTES)
+                    s.storageRef?.let(documents::get)?.takeIf { it.size <= de.schoolagent.documents.TextExtractor.MAX_INPUT_BYTES } else null
+                Triple(partId, s, bytes?.let { fingerprint(credentials, notice, partId, it, s.mimeType.orEmpty()) } ?: s.contentHash)
             }
             val raw = digest(normalized.map { "${it.first}:${it.second.mimeType}:${it.second.contentHash}" })
             val facts = digest(normalized.map { "${it.first}:${it.second.mimeType}:${it.third}" } + "title:${notice.title}")
@@ -229,6 +234,35 @@ class SchoolNoticeIngestionService(
                 if (!c.schoolUpdatePending) c.schoolPreviousStatus = c.status.name
                 c.schoolUpdatePending = true; cases.save(c)
             }
+        }
+    }
+
+    // The parent read endpoint does not supply sentDate. Changing our generated header must
+    // not reopen legacy letters or invalidate family read marks. Real body edits still matter.
+    private fun fingerprint(credentials: SchoolCredentials, notice: SchoolNotice, partId: String,
+                            bytes: ByteArray, mime: String): String {
+        val normalized = if (credentials.provider == SchoolProvider.SCHULMANAGER && notice.kind == SchoolNoticeKind.LETTER &&
+            partId == "letter" && mime == "text/plain") {
+            val lines = bytes.toString(Charsets.UTF_8).replace("\r\n", "\n").split("\n").toMutableList()
+            if (lines.size > 1 && lines[1].startsWith("Sent: ")) lines.removeAt(1)
+            lines.joinToString("\n").toByteArray()
+        } else bytes
+        return SchoolDocumentFingerprint.of(normalized, mime)
+    }
+
+    private fun onlyGeneratedHeaderChanged(credentials: SchoolCredentials, notice: SchoolNotice,
+                                           item: SchoolItem, previous: List<Source>, parts: List<Part>): Boolean {
+        if (credentials.provider != SchoolProvider.SCHULMANAGER || notice.kind != SchoolNoticeKind.LETTER ||
+            item.title != notice.title || previous.size != parts.size) return false
+        return parts.all { part ->
+            val old = previous.singleOrNull { it.externalId == "${notice.id}:${part.document.id}" } ?: return@all false
+            if (old.contentHash == part.hash) true
+            else if (part.document.id == "letter" && old.mimeType == "text/plain" && part.document.mimeType == "text/plain" &&
+                (old.byteSize ?: Long.MAX_VALUE) <= de.schoolagent.documents.TextExtractor.MAX_INPUT_BYTES) {
+                old.storageRef?.let(documents::get)?.let {
+                    fingerprint(credentials, notice, "letter", it, "text/plain") == part.facts
+                } == true
+            } else false
         }
     }
 

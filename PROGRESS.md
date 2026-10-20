@@ -18,7 +18,7 @@ classbook homework; Schulmanager single-child Messenger, personal timetable,
 homework and typed invoice observations. Their verified boundaries and deliberately
 unavailable capabilities are recorded in [the coverage plan](docs/PORTAL-COVERAGE-PLAN.md).
 Initial imports are quiet; optional feed failures do not block letter health.
-Validation: 473 backend tests and 88 frontend tests pass, including real PostgreSQL
+Validation: 474 backend tests and 88 frontend tests pass, including real PostgreSQL
 revision/payment/homework regressions. The production frontend builds successfully.
 Shared-browser checks verify receipt/response/history and payment balance views in
 English/Spanish, including a narrow mobile viewport. Privacy and secret scans pass.

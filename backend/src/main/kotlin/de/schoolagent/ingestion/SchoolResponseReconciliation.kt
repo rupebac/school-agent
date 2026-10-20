@@ -68,6 +68,11 @@ class SchoolResponseReconciliation(
                 requirements.findByCaseId(c.id).any { it.required && it.status == RequirementStatus.OPEN }
             if (outstanding) {
                 c.informationOnly = false
+                c.classificationReview = c.infoOverride == true
+                if (action.required && action.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED)) {
+                    c.importanceScore = maxOf(c.importanceScore, 4)
+                    c.importance = importanceFromScore(c.importanceScore)
+                }
                 if (c.status == CaseStatus.COMPLETED || c.status == CaseStatus.CANCELLED) lifecycle.reopen(c.id, Actor.SYSTEM, "School requires a renewed response")
                 else if (c.status == CaseStatus.INFORMATION_ONLY) lifecycle.transition(c, CaseStatus.ACTION_REQUIRED, Actor.SYSTEM, "School response required")
             } else if (c.status in setOf(CaseStatus.ACTION_REQUIRED, CaseStatus.WAITING_FOR_PARENT))

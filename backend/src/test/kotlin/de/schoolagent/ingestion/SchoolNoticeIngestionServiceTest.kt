@@ -279,4 +279,23 @@ class SchoolNoticeIngestionServiceTest {
         assertThat(c.schoolUpdatePending).isTrue()
         assertThat(actions.findById(action.id).orElseThrow().dueAt).isEqualTo(Instant.parse("2026-10-15T00:00:00Z"))
     }
+
+    @Test fun `a new required duty promotes a formerly quiet notice and flags a conflicting family classification`() {
+        sync()
+        val c = case()
+        c.importanceScore = 1; c.informationOnly = true; c.infoOverride = true
+        lifecycle.transition(c, CaseStatus.READY_FOR_REASONING)
+        lifecycle.transition(c, CaseStatus.INFORMATION_ONLY)
+        val text = "Return the required permission form by 20.10.2026."
+        content = listOf(content.single().copy(bytes = text.toByteArray()))
+        sync()
+        lifecycle.transition(c, CaseStatus.READY_FOR_REASONING)
+        val answer = """{"reviewed":true,"summary":"The school now requires a permission form.","operations":[
+            {"kind":"ACTION","operation":"ADD","title":"Return the permission form","date":"2026-10-20",
+            "required":true,"sourceId":"${item().sourceId}","quote":"$text"}]}"""
+        assertThat(corrections(answer).process(c.id)).isTrue()
+        assertThat(c.importanceScore).isGreaterThanOrEqualTo(4)
+        assertThat(c.classificationReview).isTrue()
+        assertThat(actions.findByCaseId(c.id)).hasSize(1)
+    }
 }

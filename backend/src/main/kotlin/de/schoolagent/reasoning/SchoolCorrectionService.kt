@@ -215,6 +215,11 @@ class SchoolCorrectionService(
         c.summary = root.path("summary").asText().take(2000)
         c.schoolUpdatePending = false; c.investigationComplete = true
         c.informationOnly = !open && actions.findByCaseId(c.id).isEmpty() && requirements.findByCaseId(c.id).isEmpty()
+        c.classificationReview = c.infoOverride == true && open
+        if (open && ops.any { it.path("operation").asText() in setOf("ADD", "REOPEN") && it.path("required").asBoolean() }) {
+            c.importanceScore = maxOf(c.importanceScore, 4)
+            c.importance = importanceFromScore(c.importanceScore)
+        }
         val preserveCompleted = c.schoolPreviousStatus == CaseStatus.COMPLETED.name && !open
         c.schoolPreviousStatus = null
         if (c.status == CaseStatus.NEEDS_REVIEW) {

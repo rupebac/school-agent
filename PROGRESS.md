@@ -14,7 +14,8 @@ invalidate an already queued meaningful change. Diagnostics record NO_SCHEDULE_C
 without provider text. Validation: 496 backend tests, 89 frontend tests and the
 production frontend build pass. Vite is pinned to the patched 8.3.3 release through
 an override while the Angular build package still pins 8.3.0; the dependency audit
-reports no vulnerabilities. Deployment verification is pending.
+reports no vulnerabilities. Deployed on 2026-10-21 with recovery backup; public health,
+running images, frontend assets, migration checksums and log rotation are verified.
 
 Notification/calendar follow-up: instant alerts now share date and archive checks
 before composition and delivery, including school corrections. First full manifests

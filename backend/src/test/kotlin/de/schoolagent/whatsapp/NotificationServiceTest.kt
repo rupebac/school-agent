@@ -29,7 +29,8 @@ class NotificationServiceTest {
     private val clock = Clock.fixed(Instant.parse("2026-10-02T16:00:00Z"), ZoneOffset.UTC)
     private val needs = mockk<ChildRequirementRepository>(relaxed = true)
     private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
-    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock)
+    private val timetable = mockk<TimetableNoticePolicy> { every { permitsCase(any()) } returns true }
+    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock, timetable)
     private val service = NotificationService(config, mockk(relaxed = true), actions, events, cases, users, kids, clock, needs, inbox, copy, outbox, policy, diagnostics)
     private fun case(score: Int = 4) = SchoolCase(title = "School copying fee by 5 October", summary = "Prepare €17.20", importanceScore = score, status = CaseStatus.ACTION_REQUIRED)
     init {

@@ -183,6 +183,8 @@ class SchoolRecordIngestionService(
             ?: lifecycle.createCase(childId, copy.title, category, "school:$key")
         val before = old?.payload
         val priorCaseStatus = c.status
+        val quietTimetableUpdate = record.kind == SchoolRecordKind.TIMETABLE_CHANGE && old != null &&
+            !TimetableChanges.significant(payload, before)
         val previousPayment = before?.let { runCatching { json.readTree(it).path("payment") }.getOrNull() }
         val previousTotal = previousPayment?.path("totalMinor")?.takeIf { it.isIntegralNumber }?.asLong()
         val previousPaid = previousPayment?.path("paidMinor")?.takeIf { it.isIntegralNumber }?.asLong()
@@ -231,6 +233,7 @@ class SchoolRecordIngestionService(
             receivedAt = now, createdAt = now)
         oldSource?.let { it.superseded = true; sources.save(it) }
         source.title = record.title; source.contentHash = documentHash; source.storageRef = documentHash
+        if (quietTimetableUpdate) source.factHash = oldSource?.factHash ?: oldSource?.contentHash
         source.originalSentAt = record.publishedAt
         source.canonicalUrl = record.url; source.mimeType = "text/plain"; source.byteSize = bytes.size.toLong()
         source.fetchStatus = FetchStatus.FETCHED; source.updatedAt = now
@@ -268,6 +271,8 @@ class SchoolRecordIngestionService(
             actions.findByCaseId(c.id).none { it.required && it.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED) } &&
             requirements?.findByCaseId(c.id)?.none { it.required && it.status == RequirementStatus.OPEN } == true)
             lifecycle.transition(c, CaseStatus.COMPLETED, Actor.SYSTEM, "Completed assignment preserved after deadline update")
+        if (quietTimetableUpdate && priorCaseStatus == CaseStatus.COMPLETED && c.status != CaseStatus.COMPLETED)
+            lifecycle.transition(c, CaseStatus.COMPLETED, Actor.SYSTEM, "Schedule unchanged; family completion preserved")
         changes.save(CaseChange(caseId = c.id, changeType = if (old == null) ChangeType.ADD else ChangeType.CHANGE,
             targetType = ChangeTargetType.CASE, beforeJson = before, afterJson = payload, createdAt = now))
         val stored = old ?: StoredSchoolRecord(key, namespace, childId, record.kind, record.id, record.date, hash, payload, c.id, source.id, updatedAt = now)
@@ -408,6 +413,9 @@ class SchoolRecordIngestionService(
                 val date = current.recordDate?.format(dateFormat)
                 val previousDate = oldDate?.let { runCatching { LocalDate.parse(it).format(dateFormat) }.getOrDefault(it) }
                 when {
+                    current.kind == SchoolRecordKind.TIMETABLE_CHANGE && !TimetableChanges.significant(current.payload, change?.beforeJson) ->
+                        diagnostics?.record(DiagnosticTrace(DiagnosticStage.NOTICE, DiagnosticOutcome.NO_SCHEDULE_CHANGE,
+                            childId = current.childId, caseId = c.id, recordKey = current.recordKey))
                     current.kind == SchoolRecordKind.TIMETABLE_CHANGE && json.readTree(current.payload).path("timetable").path("changed").asBoolean(true).not() ->
                         notifications.notifySchoolChange(c, "Lesson restored", c.summary.orEmpty())
                     !current.active -> notifications.notifySchoolChange(c, "Cancelled", "Removed from the school's exam timetable. Previous date: $date.")

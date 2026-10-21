@@ -91,6 +91,8 @@ class SchoolNoticeIngestionServiceTest {
     }
     private fun item() = items.findByChildId(child.id).single()
 
+    private val nativeNotifications = mockk<de.schoolagent.whatsapp.NotificationService>(relaxed = true)
+
     private fun nativeService(): SchoolRecordIngestionService {
         every { config.hasRecordBaseline(any(), any(), any()) } returns false
         every { config.recordBaseline(any(), any(), any()) } just Runs
@@ -100,7 +102,7 @@ class SchoolNoticeIngestionServiceTest {
             SchoolRecordInterpreter.Copy(r.title, r.text, if (r.kind == SchoolRecordKind.PAYMENT) "Check payment" else null, r.dueDate)
         }
         return SchoolRecordIngestionService(nativeRows, sources, cases, events, actions, changes, lifecycle, kids, config,
-            documents, interpreter, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
+            documents, interpreter, nativeNotifications, mockk(relaxed = true), mockk(relaxed = true),
             TransactionTemplate(transactionManager), clock, requirements = requirements)
     }
     private fun nativeSync(service: SchoolRecordIngestionService, record: SchoolRecord) {
@@ -392,6 +394,30 @@ class SchoolNoticeIngestionServiceTest {
         val pending = events.findPendingCalendarProjections(child.id, now, now,
             org.springframework.data.domain.PageRequest.of(0, 50))
         assertThat(pending).containsExactly(old.id)
+    }
+
+    @Test fun `staff edits preserve family completion and revision while cancellations still notify`() {
+        val service = nativeService()
+        val base = SchoolRecord("lesson", SchoolRecordKind.TIMETABLE_CHANGE, "Class timetable changed", "Teacher AAA",
+            date = LocalDate.of(2026, 10, 2), url = "https://school.example.test/timetable",
+            timetable = SchoolTimetableChange(false, "Mathematics", "12", "3", scheduleChanged = false))
+        nativeSync(service, base)
+        val record = nativeRows.findByChildIdAndKindAndActiveTrue(child.id, SchoolRecordKind.TIMETABLE_CHANGE).single()
+        val c = cases.findById(record.caseId).orElseThrow()
+        lifecycle.transition(c, CaseStatus.COMPLETED)
+        val revision = inbox.revision(c.id)
+        nativeSync(service, base.copy(text = "Teacher BBB"))
+        assertThat(c.status).isEqualTo(CaseStatus.COMPLETED)
+        assertThat(inbox.revision(c.id)).isEqualTo(revision)
+        verify(exactly = 0) { nativeNotifications.notifyDecision(any()) }
+        verify(exactly = 0) { nativeNotifications.notifySchoolChange(any(), any(), any()) }
+        val cancelled = base.copy(text = "Cancelled", timetable = base.timetable!!.copy(cancelled = true, scheduleChanged = true))
+        nativeSync(service, cancelled)
+        verify(exactly = 1) { nativeNotifications.notifyDecision(any()) }
+        val cancellationRevision = inbox.revision(c.id)
+        nativeSync(service, cancelled.copy(text = "Cancelled; staff BBB"))
+        assertThat(inbox.revision(c.id)).isEqualTo(cancellationRevision)
+        verify(exactly = 1) { nativeNotifications.notifyDecision(any()) }
     }
 
 }

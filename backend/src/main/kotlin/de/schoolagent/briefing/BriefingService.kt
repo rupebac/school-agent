@@ -35,6 +35,7 @@ class BriefingService(
     private val schoolCalendar: SchoolCalendarService,
     private val access: KidAccessService,
     private val whatsapp: de.schoolagent.whatsapp.WhatsAppConfigService,
+    private val timetable: de.schoolagent.whatsapp.TimetableNoticePolicy,
     private val copy: de.schoolagent.inbox.InboxCopyService? = null,
     private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null,
     private val diagnostics: IntegrationDiagnostics? = null,
@@ -69,7 +70,7 @@ class BriefingService(
         val dayStart = tomorrow.atStartOfDay(berlin).toInstant()
         val dayEnd = tomorrow.plusDays(1).atStartOfDay(berlin).toInstant()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(dayStart, dayEnd)
-            .filter { it.status != EventStatus.CANCELLED && it.eventType != de.schoolagent.domain.enums.EventType.SCHOOL_REPORT }
+            .filter { it.status != EventStatus.CANCELLED && it.eventType != de.schoolagent.domain.enums.EventType.SCHOOL_REPORT && timetable.permitsEvent(it) }
             .filter { e -> cases[e.caseId]?.isInfo() != true || e.eventType !in setOf(de.schoolagent.domain.enums.EventType.BRING_ITEM, de.schoolagent.domain.enums.EventType.DEADLINE, de.schoolagent.domain.enums.EventType.PAYMENT) }
             .filter { it.startTime.atZone(berlin).toLocalDate() == tomorrow }
         val open = actionRepo.findByStatusIn(openStates).filter { cases[it.caseId]?.isInfo() == false }
@@ -147,7 +148,7 @@ class BriefingService(
         val weekEvents = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(
             weekStart.atStartOfDay(berlin).toInstant(),
             weekEnd.plusDays(1).atStartOfDay(berlin).toInstant(),
-        ).filter { it.status != EventStatus.CANCELLED && it.eventType != de.schoolagent.domain.enums.EventType.SCHOOL_REPORT }
+        ).filter { it.status != EventStatus.CANCELLED && it.eventType != de.schoolagent.domain.enums.EventType.SCHOOL_REPORT && timetable.permitsEvent(it) }
             .filter { e -> cases[e.caseId]?.isInfo() != true || e.eventType !in setOf(de.schoolagent.domain.enums.EventType.BRING_ITEM, de.schoolagent.domain.enums.EventType.DEADLINE, de.schoolagent.domain.enums.EventType.PAYMENT) }
         val open = actionRepo.findByStatusIn(openStates).filter { cases[it.caseId]?.isInfo() == false }
         val requirements = requirementRepo.findAll().filter { it.status == RequirementStatus.OPEN && cases[it.caseId]?.isInfo() == false }
@@ -241,7 +242,7 @@ class BriefingService(
                 }, childId = c?.childId, accountId = access.account(user)?.id, caseId = exam.caseId, period = start, weekly = weekly))
             }
         }.filter {
-            it.status != EventStatus.CANCELLED && it.caseId in activeCases &&
+            it.status != EventStatus.CANCELLED && it.caseId in activeCases && timetable.permitsEvent(it) &&
             it.eventType !in setOf(de.schoolagent.domain.enums.EventType.BRING_ITEM, de.schoolagent.domain.enums.EventType.DEADLINE, de.schoolagent.domain.enums.EventType.PAYMENT, de.schoolagent.domain.enums.EventType.SCHOOL_REPORT)
         }
         val actions = actionRepo.findByStatusIn(openStates).filter { activeCases[it.caseId]?.isInfo() == false }

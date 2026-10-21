@@ -104,4 +104,19 @@ class SchulmanagerAdditionalFeedsTest {
         for ((total, paid) in listOf("1,00" to "0", "10" to "11", "-2" to "0", "1e4" to "0"))
             assertThat(SchoolPayment.observed(total, paid).status).isEqualTo(SchoolPaymentStatus.UNKNOWN)
     }
+    @Test fun `staff substitutions and room differences alone do not prove a changed lesson`() {
+        var subject = "Mathematics"
+        var originalPeriod = 3
+        val reader = SchulmanagerLearningFeeds { _, _, _ -> json.readTree("""[{
+            "date":"2026-10-20","classHour":{"id":3},"isCancelled":false,
+            "actualLesson":{"id":9,"subject":{"name":"$subject"},"room":{"name":"14"},"teacher":{"id":2}},
+            "originalLessons":[{"id":9,"classHour":{"id":$originalPeriod},"subject":{"name":"Mathematics"},"room":{"name":"12"},"teacher":{"id":1}}]}]""") }
+        assertThat(reader.timetable("7", LocalDate.of(2026, 10, 20)).records.single().timetable?.scheduleChanged).isFalse()
+        subject = "English"
+        assertThat(reader.timetable("7", LocalDate.of(2026, 10, 20)).records.single().timetable?.scheduleChanged).isTrue()
+        subject = "Mathematics"
+        originalPeriod = 4
+        assertThat(reader.timetable("7", LocalDate.of(2026, 10, 20)).records.single().timetable?.scheduleChanged).isTrue()
+    }
+
 }

@@ -36,6 +36,7 @@ class BriefingServiceTest {
     private val calendar = mockk<SchoolCalendarService>()
     private val access = mockk<KidAccessService>()
     private val whatsapp = mockk<de.schoolagent.whatsapp.WhatsAppConfigService>(relaxed = true)
+    private val timetable = mockk<de.schoolagent.whatsapp.TimetableNoticePolicy> { every { permitsEvent(any()) } returns true }
     private lateinit var briefing: BriefingService
 
     private val kidId = UUID.fromString("00000000-0000-0000-0000-0000000000aa")
@@ -45,7 +46,7 @@ class BriefingServiceTest {
 
     @BeforeEach
     fun setUp() {
-        briefing = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp)
+        briefing = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable)
         every { whatsapp.config().frontendUrl } returns "https://school.example.org"
         every { access.account(any()) } returns null
         every { access.accessibleKidIds(any()) } returns listOf(kidId)
@@ -102,7 +103,7 @@ class BriefingServiceTest {
             mapOf(tomorrow.toString() to de.schoolagent.inbox.ReminderCopy("Buy and bring the class reading book", setOf("action:${action.id}", "need:${need.description}")))))
         every { actionRepo.findByStatusIn(any()) } returns listOf(action)
         every { requirementRepo.findAll() } returns listOf(need)
-        val saved = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, copy)
+        val saved = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, copy)
         val rows = saved.plans(user, tomorrow, false).single().rows
         assertThat(rows).hasSize(1)
         assertThat(rows.single()).contains("Buy and bring the class reading book", "/cases/$caseId").doesNotContain("Reading project", "Bring the same")
@@ -116,7 +117,7 @@ class BriefingServiceTest {
             Instant.EPOCH, "UNKNOWN", null, "Period unknown", true))
         every { actionRepo.findByStatusIn(any()) } returns listOf(ParentAction(caseId = caseId,
             title = "Return form", dueAt = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "archived"))
-        val guarded = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp,
+        val guarded = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable,
             relevance = relevance)
         assertThat(guarded.plans(user, tomorrow, false)).isEmpty()
         assertThat(guarded.buildDaily(user, tomorrow)).isEmpty()
@@ -317,6 +318,17 @@ class BriefingServiceTest {
         assertThat(Regex("Return form").findAll(text).count()).isEqualTo(1)
         assertThat(text).contains("due", "12:00", "https://school.example.org/cases/$caseId")
         assertThat(text).doesNotContain("\n\n\n", "*Jamie*")
+    }
+
+    @Test fun `teacher substitutions are absent from both scheduled and conversational plans`() {
+        val e = SchoolEvent(caseId = caseId, title = "Staff substitution", eventType = EventType.TIMETABLE_CHANGE,
+            startTime = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "staff")
+        every { eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(any(), any()) } returns listOf(e)
+        every { timetable.permitsEvent(e) } returns false
+        assertThat(briefing.plans(user, tomorrow, false)).isEmpty()
+        assertThat(briefing.plans(user, tomorrow, true)).isEmpty()
+        assertThat(briefing.buildDaily(user, tomorrow)).isEmpty()
+        assertThat(briefing.buildWeekly(user, tomorrow)).isEmpty()
     }
 
 }

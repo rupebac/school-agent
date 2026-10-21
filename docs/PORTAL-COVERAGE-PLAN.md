@@ -51,6 +51,13 @@ claim full archival coverage or infer deletion from absence. Multi-child Messeng
 unavailable until explicit attribution is verified. Elternportal teacher-contact
 navigation is not treated as an incoming inbox.
 
+Timetable notification comparisons use subject, date, period, explicit times and
+cancellation/addition status rather than teacher names, room codes or generated text.
+Plain substitutions stay quiet on first observation as well as later staffing edits;
+provider evidence of a changed subject or slot remains eligible. The shared rule also
+filters durable sends and daily/weekly plans. Cosmetic staffing edits preserve family
+completion/read identity and retain any meaningful change already awaiting delivery.
+
 Timetable entries are date/period change notices, not lesson appointments or inferred
 arrival/departure instructions. They remain in the inbox and relevant WhatsApp plans,
 without separate entries in either calendar. V35 schedules removal of their existing

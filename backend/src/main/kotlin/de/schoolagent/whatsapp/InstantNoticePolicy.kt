@@ -20,10 +20,11 @@ class InstantNoticePolicy(
     private val requirements: ChildRequirementRepository,
     private val relevance: CaseRelevanceService,
     private val clock: Clock,
+    private val timetable: TimetableNoticePolicy,
 ) {
     private val berlin = ZoneId.of("Europe/Berlin")
     fun eligible(c: SchoolCase, schoolChange: Boolean = false): Boolean {
-        if (c.suppressInitialNotification || relevance.isArchived(c)) return false
+        if (c.suppressInitialNotification || relevance.isArchived(c) || !timetable.permitsCase(c.id)) return false
         val deadlines = mutableListOf<Instant>()
         if (!c.isInfo()) {
             val open = actions.findByCaseId(c.id).filter { it.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED) }

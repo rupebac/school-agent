@@ -19,7 +19,9 @@ data class SchoolRecord(
     val timetable: SchoolTimetableChange? = null,
 )
 /** A change notice remains visible even when the underlying lesson is cancelled. */
-data class SchoolTimetableChange(val cancelled: Boolean, val subject: String?, val room: String?, val period: String, val changed: Boolean = true)
+data class SchoolTimetableChange(val cancelled: Boolean, val subject: String?, val room: String?, val period: String, val changed: Boolean = true,
+    /** Positive provider evidence of a subject/date/period change or an added lesson, not just a substitute. */
+    val scheduleChanged: Boolean? = null, val added: Boolean = false)
 object SchoolHomework {
     fun observed(id: String, subject: String, text: String, recordedOn: LocalDate, url: String): SchoolRecord {
         val explicit = Regex("(?i)(?:\\bbis\\b|Abgabe(?:termin)?|fällig|\\bdue\\b)\\s*(?:am|on|by)?\\s*:?\\s*(\\d{2}\\.\\d{2}\\.\\d{4}|\\d{4}-\\d{2}-\\d{2})\\b")

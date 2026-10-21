@@ -81,13 +81,18 @@ class ElternportalAdditionalFeeds {
                 val cells = row.children().map { it.text().trim() }
                 require(cells.size == 6 && cells[0].matches(Regex("\\d{1,2}(?:\\s*[-–,]\\s*\\d{1,2})*\\.?")))
                 val cancelled = cells[2].contains("Entfall", true)
+                val subjectCell = row.children()[3]
+                val oldSubject = subjectCell.select("s, del, strike").text().trim()
+                val subject = subjectCell.clone().also { it.select("s, del, strike").remove() }.text().trim()
+                val subjectChanged = oldSubject.isNotEmpty() && subject.isNotEmpty() && !oldSubject.equals(subject, true)
                 // The page is class scoped, not proof of an individual pupil's arrival/departure.
                 val title = if (cancelled) "Class lesson cancelled" else "Class timetable changed"
                 val text = listOf(title, "Class timetable; period: ${cells[0]}", "Affected: ${cells[1]}",
                     "Substitution: ${cells[2]}", "Subject: ${cells[3]}", "Room: ${cells[4]}", cells[5]).joinToString("\n")
                 records += SchoolRecord(DedupKeys.sha256("$date|${cells[0]}|${cells[1]}"), SchoolRecordKind.TIMETABLE_CHANGE,
                     title, text, date = date, url = url,
-                    timetable = SchoolTimetableChange(cancelled, cells[3].ifBlank { null }, cells[4].ifBlank { null }, cells[0]))
+                    timetable = SchoolTimetableChange(cancelled, subject.ifBlank { null }, cells[4].ifBlank { null }, cells[0],
+                        scheduleChanged = cancelled || subjectChanged))
             }
         }
         require(main.select(".vp_plan_head").isNotEmpty()) { "Substitution timetable missing" }

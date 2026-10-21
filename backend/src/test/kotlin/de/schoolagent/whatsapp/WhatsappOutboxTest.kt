@@ -41,7 +41,8 @@ class WhatsappOutboxTest {
     private val events = mockk<SchoolEventRepository>(relaxed = true)
     private val needs = mockk<ChildRequirementRepository>(relaxed = true)
     private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
-    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock)
+    private val timetable = mockk<TimetableNoticePolicy> { every { permitsCase(any()) } returns true }
+    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock, timetable)
     private lateinit var outbox: WhatsappOutbox
     @BeforeEach fun setup() {
         outbox = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health, clock, inbox, policy, diagnostics = diagnostics)
@@ -238,7 +239,7 @@ class WhatsappOutboxTest {
         every { cases.findById(c.id) } returns Optional.of(c)
         every { relevance.isArchived(c) } returns true
         val guarded = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health,
-            Clock.fixed(now, ZoneOffset.UTC), inbox, InstantNoticePolicy(actions, events, needs, relevance, clock))
+            Clock.fixed(now, ZoneOffset.UTC), inbox, InstantNoticePolicy(actions, events, needs, relevance, clock, timetable))
         guarded.enqueue(parent.id, "decision:${c.id}:current:false:${parent.id}:0", message(), c.id)
         guarded.send(saved.single())
         assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
@@ -297,6 +298,18 @@ class WhatsappOutboxTest {
         outbox.send(saved.single())
         assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
         verify(exactly = 0) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `queued staffing-only alerts are skipped before translation or delivery`() {
+        val c = SchoolCase(title = "Substitution", importanceScore = 4, status = CaseStatus.INFORMATION_ONLY)
+        every { cases.findById(c.id) } returns Optional.of(c)
+        every { inbox.revision(c.id) } returns "current"
+        every { timetable.permitsCase(c.id) } returns false
+        outbox.enqueue(parent.id, "decision:${c.id}:current:true:${parent.id}:0", message(UserLanguage.ES), c.id)
+        outbox.send(saved.single())
+        assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
+        verify(exactly = 0) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { model.complete(any(), any(), any(), any()) }
     }
 
 }

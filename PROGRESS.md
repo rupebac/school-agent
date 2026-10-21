@@ -5,6 +5,15 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Timetable notification refinement: shared provider-independent comparisons ignore
+teacher and room-only edits when the subject, date and lesson period are unchanged.
+Cancellations, subject/slot changes, added lessons and meaningful restorations remain
+eligible. The rule covers first observations, subsequent imports, queued delivery and
+daily/weekly plans. Staffing edits preserve family Done/read revisions and cannot
+invalidate an already queued meaningful change. Diagnostics record NO_SCHEDULE_CHANGE
+without provider text. Validation: 496 backend tests, 89 frontend tests and the
+production frontend build pass. Deployment verification is pending.
+
 Notification/calendar follow-up: instant alerts now share date and archive checks
 before composition and delivery, including school corrections. First full manifests
 of legacy letters and first school-response observations establish quiet baselines;

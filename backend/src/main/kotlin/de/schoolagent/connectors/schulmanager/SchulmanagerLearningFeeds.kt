@@ -51,6 +51,15 @@ internal class SchulmanagerLearningFeeds(private val call: (String, String, Any)
             val subject = actual.path("subject").path("name").asText().ifBlank {
                 original.firstOrNull()?.path("subject")?.path("name")?.asText().orEmpty()
             }.takeIf { it.isNotBlank() }
+            val originalSubjects = original.mapNotNull { it.path("subject").path("name").asText().trim().takeIf(String::isNotEmpty) }
+            val subjectChanged = subject != null && originalSubjects.any { !it.equals(subject, true) }
+            val slotChanged = original.any { lesson ->
+                val originalDate = lesson.path("date").asText()
+                val originalPeriod = lesson.path("classHour").path("id").asText()
+                (originalDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && originalDate != day.toString()) ||
+                    (originalPeriod.toLongOrNull() != null && originalPeriod != period)
+            }
+            val scheduleChanged = cancelled || row.path("isNew").asBoolean(false) || subjectChanged || slotChanged
             val room = actual.path("room").path("name").asText().takeIf { it.isNotBlank() }
             val originalIds = original.map { it.path("id").asText() }.filter { it.isNotBlank() }.sorted()
             require(originalIds.isNotEmpty() || actual.path("id").asText().isNotBlank())
@@ -64,7 +73,7 @@ internal class SchulmanagerLearningFeeds(private val call: (String, String, Any)
             SchoolRecord(DedupKeys.sha256(identity), SchoolRecordKind.TIMETABLE_CHANGE, title, detail,
                 date = day,
                 url = "${SchulmanagerSession.BASE_URL}/#/modules/schedules/view/student/$studentId",
-                timetable = SchoolTimetableChange(cancelled, subject, room, period, changed))
+                timetable = SchoolTimetableChange(cancelled, subject, room, period, changed, scheduleChanged, row.path("isNew").asBoolean(false)))
         }
         // Missing exceptions cannot prove reinstatement unless the normal lesson was observed.
         return SchoolRecordFeed(SchoolRecordKind.TIMETABLE_CHANGE, SchoolFeedStatus.AVAILABLE, records)

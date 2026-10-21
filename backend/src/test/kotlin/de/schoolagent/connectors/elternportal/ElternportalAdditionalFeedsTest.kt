@@ -71,4 +71,16 @@ class ElternportalAdditionalFeedsTest {
         assertThatThrownBy { parser.homework(page("<h2>Klassenbuch</h2><input name='cur_date' value='20.10.2026'>"),
             student, LocalDate.of(2026, 10, 20), "https://school.example.test/classbook") }.isInstanceOf(IllegalArgumentException::class.java)
     }
+    @Test fun `plain staff substitutions are quiet but a replaced subject is explicit schedule evidence`() {
+        fun read(subject: String) = parser.timetable(page("""<h2>Vertretungsplan (8C)</h2><div class="main_center">
+            <div class="list bold full_width text_center">20.10.2026</div><table>
+            <tr class="vp_plan_head"><td>Std.</td><td>Betrifft</td><td>Vertretung</td><td>Fach</td><td>Raum</td><td>Info</td></tr>
+            <tr class="liste_grau"><td>3</td><td>AAA</td><td>BBB</td><td>$subject</td><td>12</td><td></td></tr>
+            </table></div>"""), student, "https://school.example.test/timetable").records.single()
+        assertThat(read("Mathematics").timetable?.scheduleChanged).isFalse()
+        val changed = read("<s>Mathematics</s> English")
+        assertThat(changed.timetable?.subject).isEqualTo("English")
+        assertThat(changed.timetable?.scheduleChanged).isTrue()
+    }
+
 }

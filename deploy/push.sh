@@ -35,7 +35,7 @@ scp "$SCRIPT_DIR/backup-full.sh" "$SCRIPT_DIR/restore.sh" "$SCRIPT_DIR/release.s
 ssh -tt "$DESTINATION" "cd $REMOTE_DIR_QUOTED/deploy && sudo env SCHOOLAGENT_BACKUP_DIR=$BACKUP_ROOT_QUOTED bash -c 'umask 077; ./backup-full.sh > .prepared-recovery-point'"
 
 rsync -az --delete --exclude=node_modules --exclude=dist --exclude=target \
-  --exclude=data --exclude=.angular --exclude='*.log' --exclude=.git \
+  --exclude=/deploy/backups/ --exclude=data --exclude=.angular --exclude='*.log' --exclude=.git \
   --exclude=.env --exclude='.env.*' --exclude='*.local.*' --exclude=api-data \
   --exclude='.restore-previous.*' --exclude='.release.lock' --exclude='.last-recovery-point' --exclude='.prepared-recovery-point' \
   "$PROJECT_ROOT/backend" "$PROJECT_ROOT/frontend" "$PROJECT_ROOT/deploy" \

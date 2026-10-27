@@ -12,7 +12,13 @@ The UI shows progress, imported/already-present counts and localized failures;
 a successful import reloads the full requested year and ignores stale responses.
 Validation: 499 backend tests, 93 frontend tests and the production frontend build
 pass. Browser checks cover failure, progress, duplicate-click prevention, successful
-full-year results and mobile layout. Deployment verification is pending.
+full-year results and mobile layout. Deployed on 2026-10-27 with a verified recovery
+backup, unchanged private configuration, healthy services, migration validation and
+bounded logs. Live import added seven entries; repeating it added none and reported
+all seven already present. Deployment transfers preserve protected legacy backup
+directories. The worker lockfile updates body-parser to 2.4.0 after the dependency
+audit identified an upstream denial-of-service advisory; worker tests and audit pass.
+The optional browser worker remains inactive.
 
 Timetable notification refinement: shared provider-independent comparisons ignore
 teacher and room-only edits when the subject, date and lesson period are unchanged.

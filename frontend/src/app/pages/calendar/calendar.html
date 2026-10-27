@@ -58,10 +58,13 @@
       @for (i of trailing(); track i) { <div class="cell pad"></div> }
     </div>
 
+    @if (schoolCalendar.importMessage()) {
+      <p role="status" aria-live="polite" [class.error]="schoolCalendar.importError()">{{ schoolCalendar.importMessage() }}</p>
+    }
     @if (auth.isAdmin && schoolCalendar.entries().length === 0) {
       <p class="cal-hint">
         {{ 'cal.importHint' | t }}
-        <button type="button" class="ghost small" (click)="importHolidays()">{{ 'cal.import' | t: { year: cursor().getFullYear() } }}</button>
+        <button type="button" class="ghost small" [disabled]="schoolCalendar.importingYear() !== null" (click)="importHolidays()">{{ 'cal.import' | t: { year: cursor().getFullYear() } }}</button>
       </p>
     }
   </section>

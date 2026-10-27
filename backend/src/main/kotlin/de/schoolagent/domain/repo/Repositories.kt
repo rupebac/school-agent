@@ -220,7 +220,7 @@ interface SchoolCalendarEntryRepository : JpaRepository<de.schoolagent.domain.mo
         endDate: java.time.LocalDate,
     ): List<de.schoolagent.domain.model.SchoolCalendarEntry>
 
-    fun findByNameAndStartDateAndEndDate(
+    fun findByChildIdIsNullAndNameAndStartDateAndEndDate(
         name: String,
         startDate: java.time.LocalDate,
         endDate: java.time.LocalDate,

@@ -5,6 +5,8 @@ import de.schoolagent.domain.model.SchoolCalendarEntry
 import de.schoolagent.domain.repo.SchoolCalendarEntryRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -18,13 +20,14 @@ import java.util.UUID
 class SchoolCalendarServiceTest {
 
     private val repo = mockk<SchoolCalendarEntryRepository>()
+    private val rest = mockk<RestTemplate>()
     private lateinit var service: SchoolCalendarService
 
     @BeforeEach
     fun setUp() {
         service = SchoolCalendarService(
             repo,
-            mockk<RestTemplate>(),
+            rest,
             Clock.fixed(Instant.parse("2026-09-24T12:00:00Z"), ZoneOffset.UTC),
         )
     }
@@ -99,4 +102,37 @@ class SchoolCalendarServiceTest {
         // Thu 29, Fri 30, Sat 31 holiday/weekend, Sun 1, Mon 2
         assertThat(service.schoolDaysBetween(from, LocalDate.of(2026, 11, 2))).isEqualTo(3)
     }
+    private val primary = "https://ferien-api.de/api/v1/holidays/BY/2027"
+    private val fallback = "https://schulferien-api.de/api/v2/2027/BY"
+    private val response = """[{"name":"synthetic-break","start":"2027-05-03T00:00Z","end":"2027-05-07T23:59Z","stateCode":"BY","year":2027}]"""
+
+    @Test fun `rate limited provider falls back and repeated import stays idempotent with cooldown`() {
+        every { rest.getForObject(primary, String::class.java) } throws org.springframework.web.client.HttpClientErrorException(
+            org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)
+        every { rest.getForObject(fallback, String::class.java) } returns response
+        var saved: SchoolCalendarEntry? = null
+        every { repo.findByChildIdIsNullAndNameAndStartDateAndEndDate(any(), any(), any()) } answers { saved }
+        every { repo.save(any<SchoolCalendarEntry>()) } answers { firstArg<SchoolCalendarEntry>().also { saved = it } }
+        assertThat(service.importBavarian(2027)).isEqualTo(SchoolCalendarService.ImportResult(1, 0))
+        assertThat(service.importBavarian(2027)).isEqualTo(SchoolCalendarService.ImportResult(0, 1))
+        assertThat(saved!!.startDate).isEqualTo(LocalDate.of(2027, 5, 3))
+        assertThat(saved!!.endDate).isEqualTo(LocalDate.of(2027, 5, 7))
+        assertThat(saved!!.childId).isNull()
+        verify(exactly = 1) { rest.getForObject(primary, String::class.java) }
+        verify(exactly = 2) { rest.getForObject(fallback, String::class.java) }
+    }
+    @Test fun `malformed incomplete or wrong-state provider responses never partially persist`() {
+        for (bad in listOf("[]", "{}", response.replace("BY", "BE"), response.replace("2027", "2028"),
+            response.dropLast(1) + ",{}]")) {
+            every { rest.getForObject(primary, String::class.java) } returns bad
+            every { rest.getForObject(fallback, String::class.java) } returns bad
+            assertThatThrownBy { service.importBavarian(2027) }.isInstanceOf(HolidayImportUnavailable::class.java)
+        }
+        verify(exactly = 0) { repo.save(any<SchoolCalendarEntry>()) }
+    }
+    @Test fun `invalid requested years never call external providers`() {
+        assertThatThrownBy { service.importBavarian(9999) }.isInstanceOf(IllegalArgumentException::class.java)
+        verify(exactly = 0) { rest.getForObject(any<String>(), String::class.java) }
+    }
+
 }

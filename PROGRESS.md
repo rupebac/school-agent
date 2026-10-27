@@ -5,6 +5,15 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+School holiday import repair: provider rate limits now use a validated fallback,
+with a short cooldown after HTTP 429. Imports validate the complete response before
+writing, preserve global-entry idempotence and return explicit failure statuses.
+The UI shows progress, imported/already-present counts and localized failures;
+a successful import reloads the full requested year and ignores stale responses.
+Validation: 499 backend tests, 93 frontend tests and the production frontend build
+pass. Browser checks cover failure, progress, duplicate-click prevention, successful
+full-year results and mobile layout. Deployment verification is pending.
+
 Timetable notification refinement: shared provider-independent comparisons ignore
 teacher and room-only edits when the subject, date and lesson period are unchanged.
 Cancellations, subject/slot changes, added lessons and meaningful restorations remain

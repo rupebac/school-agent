@@ -555,13 +555,16 @@
             <summary>{{ 'set.calSchool.h' | t }}</summary>
             <p class="muted">{{ 'set.calSchool.intro' | t }}</p>
             <div class="actions">
-              <button type="button" class="ghost" (click)="importCalendar(currentYear())">
+              <button type="button" class="ghost" [disabled]="schoolCalendar.importingYear() !== null" (click)="importCalendar(currentYear())">
                 {{ 'set.calSchool.import' | t: { year: currentYear() } }}
               </button>
-              <button type="button" class="ghost" (click)="importCalendar(currentYear() + 1)">
+              <button type="button" class="ghost" [disabled]="schoolCalendar.importingYear() !== null" (click)="importCalendar(currentYear() + 1)">
                 {{ 'set.calSchool.import' | t: { year: currentYear() + 1 } }}
               </button>
             </div>
+            @if (schoolCalendar.importMessage()) {
+              <p role="status" aria-live="polite" [class.error]="schoolCalendar.importError()">{{ schoolCalendar.importMessage() }}</p>
+            }
             @if (schoolCalendar.entries().length > 0) {
               <table class="users">
                 <thead><tr><th>{{ 'set.calSchool.name' | t }}</th><th>{{ 'set.calSchool.dates' | t }}</th><th>{{ 'set.calSchool.type' | t }}</th><th></th></tr></thead>

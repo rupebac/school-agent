@@ -60,11 +60,13 @@ class SchoolCalendarController(
     }
 
     @PostMapping("/admin/school-calendar/import")
-    fun import(@RequestParam year: Int): Map<String, Any> = try {
+    fun import(@RequestParam year: Int): org.springframework.http.ResponseEntity<Map<String, Any>> = try {
         val result = calendar.importBavarian(year)
-        mapOf("ok" to true, "imported" to result.imported, "alreadyPresent" to result.alreadyPresent)
-    } catch (e: Exception) {
-        mapOf("ok" to false, "error" to (e.message ?: "import failed"))
+        org.springframework.http.ResponseEntity.ok(mapOf("ok" to true, "imported" to result.imported, "alreadyPresent" to result.alreadyPresent))
+    } catch (_: IllegalArgumentException) {
+        org.springframework.http.ResponseEntity.badRequest().body(mapOf("ok" to false, "code" to "INVALID_YEAR"))
+    } catch (_: de.schoolagent.calendar.HolidayImportUnavailable) {
+        org.springframework.http.ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(mapOf("ok" to false, "code" to "HOLIDAYS_UNAVAILABLE"))
     }
 
     @PostMapping("/admin/school-calendar")

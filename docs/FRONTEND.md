@@ -2,8 +2,7 @@
 
 Technical design for the Angular control center. Requirements come from the
 spec (docs/SPEC.md §27–28); this document adds the decisions needed to build
-it. Implementation is milestone **M8** (see PROGRESS.md), unless pulled
-forward deliberately.
+it. Implementation status is tracked in PROGRESS.md.
 
 ---
 
@@ -22,24 +21,24 @@ oversight, bulk review and configuration, not chat.
 | Styling | Plain CSS + custom properties now; Angular Material only if a component is genuinely cheaper than CSS | family tool, not a design showcase |
 | State | Services with signals; no NgRx | two users, small data volume |
 | HTTP | Angular `HttpClient` + dev proxy to API | no CORS in dev or prod (same origin via proxy) |
-| Charts/calendar libs | none in v1 (hand-rolled agenda list; month grid later) | calendar views read from our own `/api/events`, not a lib's data model |
+| Charts/calendar libs | none (custom month grid and agenda) | calendar views read from our own `/api/events`, not a lib's data model |
 
-## 3. Authentication (important design decision)
+## 3. Authentication
 
-The backend uses HTTP Basic (v1). Browsers answer a `401 +
-WWW-Authenticate: Basic` with the **native popup dialog**, which is ugly and
-un-stylable. Therefore:
+Browser authentication uses server sessions and an optional 14-day persistent
+remember-me cookie. `Auth` restores the current account from `/api/auth/me`; no
+password or Basic authorization header is kept in browser storage. HttpClient sends
+same-origin cookies and Angular supplies the XSRF header for mutations.
 
-- Backend change (M8 prerequisite): omit `WWW-Authenticate` on `WWW-Authenticate`-worthy
-  401s for `/api/**` requests that carry `Accept: application/json` or the
-  `X-Requested-With: XMLHttpRequest` header → no native popup.
-- Frontend: `/login` route with username+password form; credentials are
-  base64'd and kept in a signal-backed auth service (memory +
-  sessionStorage). Every API request gets `Authorization: Basic …` via an
-  interceptor. A 401 anywhere → redirect to `/login`.
-- Logout drops the stored header. Session expiry = next 401.
-- Later (not v1): upgrade to form login + server session or tokens without
-  breaking this flow — the interceptor is the only place credentials are used.
+The interceptor identifies XHR requests and routes expired sessions to `/login`,
+preserving an allowed internal return URL, including Calendar deep links. Login
+separates invalid credentials (401) from temporary service/network failures. Duplicate
+submissions are ignored while a login request is pending. Logout invalidates the server
+session and persistent login. Basic authentication remains available to API clients.
+
+Role and child-access enforcement lives on the server. Route guards and hidden controls
+are presentation only. Account deletion, password changes and role changes invalidate
+existing privileges through the server's current-account check.
 
 ## 4. Routes and components
 
@@ -53,7 +52,7 @@ protected. These pages describe configured integrations without exposing setting
 
 ```
 /login                 LoginComponent
-/                      InboxPage                 one lane per child (or “Together”), chips: All | Needs us | Coming | Info | Done
+/                      InboxPage                 one lane per child (or “Together”), Info / Done / Archived toggles
 /cases/:id             CaseDetailPage            child route of the inbox: beside the lanes (wide), drawer (tablet), full screen (phone)
 /calendar              CalendarPage              month grid coloured per child + agenda split by child (lazy)
 /settings              SettingsPage              School / You / Family (lazy)
@@ -125,19 +124,18 @@ Implemented today (backend `de.schoolagent.api`):
 
 Unknown status filter → 400. Unknown id → 404.
 
-**Planned (build in lockstep with M2+ backend work, do not invent client-side):**
+The implementation includes these additional endpoint groups. Controller DTOs and
+frontend stores are authoritative for parameters; this is an ownership map, not a
+second API schema to maintain manually.
 
-| Method | Path | Milestone |
+| Area | Implemented routes | Purpose |
 |---|---|---|
-| GET | `/api/events?from&to` | M8 (calendar view) |
-| GET | `/api/actions?state=…` | M8 (actions view; list-only first) |
-| PUT | `/api/cases/{id}/complete` | Inbox Done (shared across parents) |
-| PUT | `/api/actions/{id}/assign` | Inbox Take / Unassign |
-| PUT | `/api/actions/{id}/complete` | Inbox Done when the card has an action |
-| GET | `/api/settings`, PUT `/api/settings/{key}` | M8 (Google/AI/automation tabs) |
-| GET | `/api/audit?caseId&from&to` | M8 |
-| GET | `/api/health/connectors` | M8 (health strip; actuator is not enough for the strip) |
-| POST | `/api/ingest/manual` (upload/URL) | later (spec §42) |
+| Agenda | `/api/events`, `/api/school-calendar` | School dates and holidays |
+| Duties | `/api/actions`, `/api/requirements` | List, create, edit and complete duties |
+| Case state | `/api/cases/{id}/complete`, `/read`, `/classification`, `/undo-complete`, `/mute` | Shared completion, personal read state and explicit overrides |
+| Capture | `POST /api/cases/photo` | Authorized manual document capture |
+| Configuration | `/api/school-connection`, `/api/google`, `/api/models`, `/api/inbox/settings` | Provider and family configuration |
+| Oversight | `/api/audit`, `/api/health/connectors` | History and connector health |
 
 ## 6. Case detail — the provenance screen (spec §29)
 
@@ -148,7 +146,7 @@ The single most important screen. Layout:
    shows the stored reason — spec §18's "do not silently conclude").
 3. Tabs or sections:
    - **Actions** (parent obligations, assignee, due, deep link to external form)
-   - **Jamie needs** (child requirements with dates)
+   - **Child requirements** (child requirements with dates)
    - **Events** (projected calendar events, status incl. CANCELLED/MOVED)
    - **Sources** (type, title, sender, date, URL, fetch status)
    - **Evidence** (kind, subject, confidence, source link)
@@ -157,38 +155,29 @@ The single most important screen. Layout:
 4. Every item that came from a source links to it; sources link out to
    originals where a URL exists. "The AI must not become an opaque authority."
 
-## 7. Section ↔ spec §28 mapping
+## 7. State and interaction conventions
 
-| Spec §28 section | v1 scope | Blocked on |
-|---|---|---|
-| Dashboard | urgent actions + upcoming deadlines/events from `/api/cases` data; connector strip once `/api/health/connectors` exists | health endpoint |
-| Calendar/Agenda | agenda list (chronological events from cases) | `/api/events` |
-| Actions | read-only grouping by state; assign/complete once PATCH exists | write API |
-| Cases/Inbox | **fully buildable now** with existing endpoints | — |
-| Settings | structure + disabled inputs | settings endpoints |
-| Audit | — | `/api/audit` |
+The inbox, case detail, calendar, settings and audit pages are implemented. Duty
+management is integrated into the inbox and details; legacy actions/cases routes
+redirect there. Avoid duplicate representations with different completion semantics.
 
-Meaning: login + cases list + case detail + dashboard shell are buildable
-**today** against the running backend; the rest lands with the backend
-endpoints above.
+- Use signal-backed services for HTTP data and page models for derived presentation.
+- Reject stale responses when switching children or changing a request scope.
+- Refresh accepted server state after writes; do not invent authoritative local state.
+- Keep user-facing text in the shared English/Spanish dictionaries.
+- Support desktop panels and mobile full-screen details with the same routes.
+- Refresh on focus and existing polling triggers; no server-push dependency is required.
+- Store UI preferences only; credentials and private API response caches do not belong
+  in local storage or the service worker.
 
-## 8. Non-goals (v1)
+## 8. Development
 
-- No push/live updates (poll on focus; SSE later if it matters).
-- No i18n machinery (UI language: English with German domain terms, like the spec).
-- No mobile-specific design beyond responsive CSS; WhatsApp is the mobile UX.
-- No optimistic UI mutations — refresh after write ops.
+Use the checked-in `frontend/proxy.conf.json`. `npm start` serves the Angular development
+application and proxies API requests to the backend; production nginx serves the bundle
+and proxies API requests on the same origin. Supply private backend configuration
+separately. Run `npm test -- --watch=false` and `npm run build` before committing UI code.
 
-## 9. Dev setup
-
-```jsonc
-// frontend/proxy.conf.json (to add)
-{ "/api": { "target": "http://127.0.0.1:8080", "secure": false } }
-```
-
-`npm start` serves on :4200 and proxies `/api` to the backend; production
-deployment (deploy/docker-compose.yml) serves the built bundle behind the
-same origin as the API.
+## 9. Existing interaction details
 
 Family → Automatic archive configures the fallback through `/api/inbox/settings`
 (GET authenticated, PUT admin; 1–52 weeks). Updates apply to existing uncertain

@@ -1,6 +1,7 @@
 package de.schoolagent.briefing
 
 import de.schoolagent.calendar.SchoolCalendarService
+import de.schoolagent.domain.enums.CaseStatus
 import de.schoolagent.domain.enums.ActionStatus
 import de.schoolagent.domain.enums.EventType
 import de.schoolagent.domain.enums.RequirementStatus
@@ -39,6 +40,8 @@ class BriefingServiceTest {
     private val timetable = mockk<de.schoolagent.whatsapp.TimetableNoticePolicy> { every { permitsEvent(any()) } returns true }
     private val emailSources = mockk<de.schoolagent.domain.repo.SourceRepository>(relaxed = true)
     private val emailPolicy = de.schoolagent.email.SchoolEmailPolicy(emailSources)
+    private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
+    private fun selector(relevance: de.schoolagent.inbox.CaseRelevanceService = this.relevance) = BriefingCaseSelector(caseRepo, relevance, emailPolicy)
     private lateinit var briefing: BriefingService
 
     private val kidId = UUID.fromString("00000000-0000-0000-0000-0000000000aa")
@@ -48,7 +51,7 @@ class BriefingServiceTest {
 
     @BeforeEach
     fun setUp() {
-        briefing = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, emailPolicy)
+        briefing = BriefingService(selector(), eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable)
         every { whatsapp.config().frontendUrl } returns "https://school.example.org"
         every { access.account(any()) } returns null
         every { access.accessibleKidIds(any()) } returns listOf(kidId)
@@ -105,7 +108,7 @@ class BriefingServiceTest {
             mapOf(tomorrow.toString() to de.schoolagent.inbox.ReminderCopy("Buy and bring the class reading book", setOf("action:${action.id}", "need:${need.description}")))))
         every { actionRepo.findByStatusIn(any()) } returns listOf(action)
         every { requirementRepo.findAll() } returns listOf(need)
-        val saved = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, emailPolicy, copy)
+        val saved = BriefingService(selector(), eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, copy)
         val rows = saved.plans(user, tomorrow, false).single().rows
         assertThat(rows).hasSize(1)
         assertThat(rows.single()).contains("Buy and bring the class reading book", "/cases/$caseId").doesNotContain("Reading project", "Bring the same")
@@ -119,8 +122,7 @@ class BriefingServiceTest {
             Instant.EPOCH, "UNKNOWN", null, "Period unknown", true))
         every { actionRepo.findByStatusIn(any()) } returns listOf(ParentAction(caseId = caseId,
             title = "Return form", dueAt = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "archived"))
-        val guarded = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, emailPolicy,
-            relevance = relevance)
+        val guarded = BriefingService(selector(relevance), eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable)
         assertThat(guarded.plans(user, tomorrow, false)).isEmpty()
         assertThat(guarded.buildDaily(user, tomorrow)).isEmpty()
         assertThat(guarded.buildWeekly(user, tomorrow)).isEmpty()
@@ -344,6 +346,29 @@ class BriefingServiceTest {
         assertThat(briefing.buildWeekly(user, tomorrow)).isEmpty()
         assertThat(briefing.plans(user, tomorrow, false)).isEmpty()
         assertThat(briefing.plans(user, tomorrow, true)).isEmpty()
+    }
+
+    @Test fun `inconsistent event child cannot expose an inaccessible case in any plan`() {
+        val other = UUID.randomUUID()
+        every { caseRepo.findAll() } returns listOf(SchoolCase(id = caseId, childId = other,
+            title = "Private sibling notice", importanceScore = 5, status = CaseStatus.ACTION_REQUIRED))
+        every { eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(any(), any()) } returns listOf(
+            SchoolEvent(caseId = caseId, childId = kidId, title = "Private sibling event", eventType = EventType.EXAM,
+                startTime = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "inconsistent-child"))
+        assertThat(briefing.buildDaily(user, tomorrow)).isEmpty()
+        assertThat(briefing.buildWeekly(user, tomorrow)).isEmpty()
+        assertThat(briefing.plans(user, tomorrow, false)).isEmpty()
+        assertThat(briefing.plans(user, tomorrow, true)).isEmpty()
+    }
+
+    @Test fun `family shared cases retain child assigned events in conversational plans`() {
+        every { caseRepo.findAll() } returns listOf(SchoolCase(id = caseId, childId = null,
+            title = "Shared notice", importanceScore = 5, status = CaseStatus.ACTION_REQUIRED))
+        every { eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(any(), any()) } returns listOf(
+            SchoolEvent(caseId = caseId, childId = kidId, title = "Shared family event", eventType = EventType.EXAM,
+                startTime = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "shared-child"))
+        assertThat(briefing.buildDaily(user, tomorrow)).contains("Shared family event")
+        assertThat(briefing.buildWeekly(user, tomorrow)).contains("Shared family event")
     }
 
 }

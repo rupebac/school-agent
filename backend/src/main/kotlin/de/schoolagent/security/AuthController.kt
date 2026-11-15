@@ -40,6 +40,7 @@ class AuthController(
     private val users: AppUserRepository,
 ) {
 
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
     private val contextRepository: SecurityContextRepository = HttpSessionSecurityContextRepository()
 
     data class LoginRequest(val username: String, val password: String, val rememberMe: Boolean? = false)
@@ -74,11 +75,18 @@ class AuthController(
                 rememberMeServices.loginSuccess(RememberMeRequest(httpRequest), httpResponse, auth)
             }
         } catch (e: Exception) {
-            // answer directly — no exception through the filter chain (avoids redirect handling)
-            httpResponse.status = 401
+            // Provisioning may fail after the context was saved. A failed login must
+            // never leave a usable authenticated session behind.
+            SecurityContextLogoutHandler().logout(httpRequest, httpResponse, SecurityContextHolder.getContext().authentication)
+            val rejected = e is AuthenticationException &&
+                e !is org.springframework.security.authentication.AuthenticationServiceException
+            if (!rejected) log.warn("Sign-in provisioning failed errorType={}", e.javaClass.simpleName)
+            httpResponse.status = if (rejected) 401 else 503
             httpResponse.contentType = "application/json"
             httpResponse.characterEncoding = "UTF-8"
-            httpResponse.writer.write("""{"status":401,"error":"wrong username or password"}""")
+            httpResponse.writer.write(if (rejected)
+                """{"status":401,"error":"wrong username or password"}"""
+            else """{"status":503,"error":"Sign-in is temporarily unavailable"}""")
         }
     }
 

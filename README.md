@@ -196,4 +196,5 @@ Backend integration tests require Docker. Screenshots can be reproduced with the
 [fictional demo guide](docs/screenshots/README.md).
 
 [Product specification](docs/SPEC.md) · [Architecture](docs/ARCHITECTURE.md) ·
+[Architecture review](docs/ARCHITECTURE-REVIEW.md) ·
 [Frontend conventions](docs/FRONTEND.md) · [Current status and validation limits](PROGRESS.md)

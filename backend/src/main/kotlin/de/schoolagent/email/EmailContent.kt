@@ -6,7 +6,6 @@ import jakarta.mail.Session
 import jakarta.mail.internet.MimeMessage
 import jakarta.mail.internet.InternetAddress
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
 import java.time.Instant
 import java.util.Properties
 
@@ -22,7 +21,7 @@ data class EmailContent(
             body.replace(Regex("\\s+"), " ").trim(), attachmentHashes.sorted().joinToString(",")).joinToString("\n"))
     }
     companion object {
-        fun hash(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+        fun hash(text: String) = de.schoolagent.common.DedupKeys.sha256(text)
         fun addresses(value: String?): List<String> = value?.let { header -> runCatching {
             InternetAddress.parseHeader(header, false).flatMap { if (it.isGroup) it.getGroup(false).orEmpty().toList() else listOf(it) }
                 .map { it.address.trim().lowercase() }

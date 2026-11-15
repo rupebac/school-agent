@@ -126,6 +126,7 @@ export const ES: Record<string, string> = {
   'login.remember': 'Recordarme en este dispositivo',
   'login.submit': 'Entrar',
   'login.busy': 'Comprobando…',
+  'login.unavailable': 'El inicio de sesión no está disponible temporalmente. Inténtalo de nuevo.',
   'login.failed': 'No se pudo entrar — usuario o contraseña incorrectos.',
   'inbox.title': 'Bandeja',
   'inbox.intro': 'Una sola lista de lo que pidió el colegio. Abre una fila para leer el original.',

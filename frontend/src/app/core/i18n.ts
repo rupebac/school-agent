@@ -60,6 +60,7 @@ export const EN: Record<string, string> = {
   'login.remember': 'Remember me on this device',
   'login.submit': 'Sign in',
   'login.busy': 'Checking…',
+  'login.unavailable': 'Sign-in is temporarily unavailable. Please try again.',
   'login.failed': 'Sign-in failed — wrong user or password.',
   'public.links': 'About this service',
   'public.about': 'About',

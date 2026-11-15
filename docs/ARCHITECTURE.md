@@ -1,480 +1,208 @@
-# School Administration Agent — Architecture
+# Architecture
 
-This document is the deliverable required by spec §49 before implementation starts.
-It covers: refined architecture, domain model, case state machine, major interfaces,
-database schema, repository structure, implementation milestones, and unresolved risks.
+This document describes the implemented system. [SPEC.md](SPEC.md) records product
+intent; it is not a claim that every proposed feature exists. The current delivery
+ledger is [PROGRESS.md](../PROGRESS.md), UI conventions are in
+[FRONTEND.md](FRONTEND.md), and provider capabilities are tracked in
+[PORTAL-COVERAGE-PLAN.md](PORTAL-COVERAGE-PLAN.md).
 
-Source spec: `docs/SPEC.md` (pasted requirements document).
+## System shape
 
----
+School Agent is a modular monolith: an Angular application, a Kotlin/Spring Boot API,
+PostgreSQL and a content-addressed document directory. An optional isolated Node
+Playwright worker renders permitted external pages. Keep this shape: family-scale
+traffic does not justify independent services or an event broker.
 
-## 1. Refined architecture
-
-### 1.1 Shape
-
-A **modular monolith** (Kotlin + Spring Boot) plus one isolated **Playwright worker**
-container. PostgreSQL is the single source of truth. Google Calendar and WhatsApp are
-*projections* of internal state, never authoritative.
-
+```mermaid
+flowchart LR
+  UI[Angular] --> API[Authenticated API]
+  API --> App[Application services]
+  Jobs[Scheduled jobs] --> App
+  EP[Elternportal adapter] --> School[Shared school contracts]
+  SM[Schulmanager adapter] --> School
+  School --> Import[Notice and native record ingestion]
+  Gmail[Gmail adapter] --> Mail[Email ingestion]
+  Import --> DB[(PostgreSQL)]
+  Mail --> DB
+  Import --> Files[Document store]
+  Mail --> Files
+  App --> DB
+  App --> Files
+  App --> AI[Model router and response cache]
+  App --> Crawl[Public HTTP crawler]
+  Crawl --> Worker[Optional browser worker]
+  DB --> Projection[Calendar projector]
+  Projection --> Google[Google Calendar]
+  DB --> Outbox[WhatsApp outbox]
+  Outbox --> Meta[WhatsApp Cloud API]
 ```
-┌─────────────┐   ┌──────────────────────────────────────────────────┐
-│  Angular     │   │                school-api (Kotlin)                │
-│  school-web  │──▶│  api ─ auth ─ settings ─ health ─ audit           │
-└─────────────┘   │                                                  │
-                  │  ┌──────────── ingestion pipeline ─────────────┐  │
-                  │  │ connectors → source dedup → extraction →     │  │
-                  │  │ case resolution → investigation (crawler) →  │  │
-                  │  │ case reasoning → mutation apply → projection │  │
-                  │  └──────────────────────────────────────────────┘  │
-                  │           │            │              │            │
-                  └───────────┼────────────┼──────────────┼────────────┘
-                              ▼            ▼              ▼
-                        PostgreSQL     Gmail API     Google Calendar
-                        (truth)        Elternportal  WhatsApp Gateway
-                                        HTTP crawler      │
-                                   ┌───────────────┐      │
-                                   │ playwright-   │◀─────┘ (only when HTTP
-                                   │ worker (Node) │       parsing is not enough)
-                                   └───────────────┘
-```
 
-### 1.2 Ingestion pipeline (how a source becomes state)
+PostgreSQL owns accepted cases, duties, dates, completion, source history and pending
+work. Calendar is a projection; WhatsApp is a delivery channel. Neither can replace
+internal state. Raw documents are addressed by content hash; a recovery point must
+include both database and document storage, plus private configuration and images.
 
-Each stage is idempotent and independently retryable. Stages communicate only through
-the database, so a crash at any point loses nothing.
+## Ownership and dependencies
 
-1. **Acquire** — a connector (`GmailConnector`, `ElternportalClient`, manual upload)
-   produces a raw item and a deterministic `dedupKey` (`sourceType:externalId`).
-   If the key exists, stop — this is a re-poll, not a new source.
-2. **Store** — raw content (MIME, HTML, PDF bytes) written to the document store;
-   SHA-256 content hash recorded. Identical content arriving through two channels
-   (e.g. portal letter + notification email) collapses here.
-3. **Extract (cheap model)** — classification, relevance, dates/amounts/people,
-   link candidates. Output is structured `Evidence`, never free text. Obvious noise
-   ("thank you for the summer celebration") ends here with `SILENT`, no reasoning model.
-4. **Case resolution** — attach to an existing `Case` or create one:
-   a. *Deterministic first*: connector-provided thread/topic IDs, known sender+subject
-      patterns, an explicit `case.dedupKey`.
-   b. *Reasoning model second*: given candidate open cases (title, summary, recent
-      evidence) and the new evidence, choose `NEW_CASE | ATTACH(caseId) | UNSURE`.
-      `UNSURE` → `NEEDS_REVIEW` (never guess).
-5. **Investigate (deterministic + cheap model)** — bounded crawl following
-   semantically relevant links (`Anmeldung`, `Termine`, `Kosten`, …); PDF parsing;
-   optional read-only browser rendering via the worker. Each fetch is recorded as an
-   `InvestigationStep`. Limits: max depth, pages, AI calls, tokens per case.
-6. **Reason (strong model)** — receives *distilled evidence* plus the current case
-   state, emits a **mutation set** (see §4): add actions/events/requirements, move
-   dates, cancel, change deadlines. It can request original sources by id.
-7. **Apply** — mutations are validated and committed transactionally; every mutation
-   writes a `CaseChange` row (before/after). Dedup keys prevent re-application on
-   re-runs. Projector updates Google Calendar; notifier decides
-   IMMEDIATE / DIGEST / SILENT per family policy.
+Paths below are relative to `backend/src/main/kotlin/de/schoolagent`.
 
-### Mutable portal notices and school observations
-
-`SchoolNoticeIngestionService` is the shared path for letters, message entries and
-noticeboard posts. Provider adapters only discover scoped items and return documents
-plus typed receipt/response observations. An explicit connection permission allows
-Elternportal PDF retrieval and its automatic receipt side effect. No form answers,
-consent choices, messages or payments are submitted by a connector.
-
-V34 introduces stable `SchoolItem` identities and immutable manifest revisions.
-Raw content and semantic fingerprints are separate: metadata-only PDF regeneration
-retains family read/completion identity; ambiguous changes require review. Existing
-Source IDs are adopted and preserved. Current Source/Evidence queries exclude
-superseded parts; historical sources remain authorized downloads. Crawled sources
-record their root-source provenance so replacing one letter cannot retire independent
-evidence in a merged case.
-
-Complete candidate manifests are downloaded and fingerprinted before a short
-child/case transaction. PostgreSQL session advisory locks serialize provider account
-context across workers; at most two local operations hold a dedicated lock connection.
-Acquisition budgets bound requests, bytes, item counts and each provider session.
-Each notice feed has its own quiet baseline, content-check timestamps and backlog.
-
-`SchoolCorrectionService` reads current originals/OCR and proposes explicit operations
-outside database locks. It checks current fact fingerprints and validates target IDs
-and source quotes under the case lock before applying. Stable action/event IDs retain
-completion and Calendar identity. Failed or ambiguous reviews retain old accepted
-duties with a pending banner and block stale Done actions. Durable notification intent
-and Calendar pending flags survive restarts.
-
-Native homework, payments and timetable changes reuse `SchoolRecordIngestionService`.
-Homework is a child requirement, with only explicitly supplied deadlines. Native
-sources also retain immutable history. Typed payment observations update only their
-linked duty; partial payments preserve local Done, while a higher obligation or a
-payment reversal reopens it. No disappearance from a partial list proves settlement.
-Routine timetable lessons never become Calendar appointments.
-
-### Native record acquisition
-
-`SchoolSession` binds a fresh login to a verified child before reading letters or native
-sections. `SchoolRecordFeed` distinguishes AVAILABLE (including a proven empty list),
-UNAVAILABLE (disabled/denied), and FAILED (network/schema errors). Both providers
-normalize exams, forgotten homework/material reports and payment requests. No class,
-school or account IDs are embedded in application code.
-
-`SchoolRecordIngestionService` persists child/account/student-scoped native identities and
-content hashes. Unchanged successfully worded records preserve parent completion/read
-state and make no AI calls. One cached language pass supplies English wording; native exam/report dates remain
-authoritative. Unknown payment deadlines need literal source evidence. Sources and
-case changes retain provenance and transitions write history/audit. Schema-validated
-language answers are cached; invalid saved answers are evicted. During AI outages the
-native facts remain visible with original wording and a persisted enrichment flag;
-wording repair preserves Done/read state and never reannounces unchanged facts.
-Generated wording has a persisted version: changes to the interpreter repair older
-copy once through the same audited enrichment path, without changing source hashes
-or native identity. Unexplained parenthetical timetable reference codes stay in the
-original source and are excluded from translation input; exam titles contain only
-the subject and assessment, without parenthetical interpretations.
-Existing approved WhatsApp templates handle these cases.
-
-Elternportal reads the dedicated class exam table, never the mixed general calendar.
-Its calendar JSON IDs are positional, so rows without native IDs use a date/topic identity:
-a moved exam withdraws the previous date and creates its replacement. Only a verified
-complete class exam snapshot may withdraw future exams. Forgotten reports are historical
-`SCHOOL_REPORT` events, not invented bring-item tasks or tomorrow reminders. Missing
-payments/reports never imply completion or cancellation. Nonempty payment rows require
-a stable native identifier; unfamiliar layouts fail visibly and await parser refinement.
-Schulmanager uses student-filtered exam/classbook endpoints and sibling-filtered unpaid
-invoices. Disabled modules and school-denied classbook access remain unavailable and do
-not interrupt letters or other accessible sections. Letter last-sync/connection health
-is independent of optional section failures; per-section status includes its last success.
-The first successful snapshot of each section establishes a quiet baseline, even for
-previously configured children. Later historical reports older than three days stay
-quiet. Exams are requested from today forward; an empty Elternportal exam timetable
-requires an explicit empty marker and table headers are ignored.
-
-Elternportal name/native pupil ID establishes identity; the configured class only guards
-the exam timetable. A class mismatch disables that feed without blocking letters or
-changing record keys. Shared-account operations serialize viewing context, and the
-returned letter page and document access are checked against the selected pupil.
-
-The native record row is a durable side-effect outbox with separate notification and
-calendar pending flags. Quiet-import suppression, enqueue and notification acknowledgement
-commit atomically. Updates, withdrawals and deletion failures retry every five
-minutes independently of school access, including inactive records. Projection errors
-retain the Google ID and remain pending; school reports never create Google appointments.
-Timetable changes use the existing information template with explicit cancellation/move
-wording. The existing letter-score sweep preserves explicit native priorities by source
-provenance. Status/reasons are visible per child in Settings, including on phones.
-
-`IntegrationDiagnostics` writes fixed-vocabulary diagnostic events to `audit_entry`
-in independent transactions, as well as console logs. Each school sync has a random
-run reference. Feed snapshots retain opaque record references before date filtering;
-changed sets and daily checkpoints preserve evidence of presence/absence without
-copying portal HTML, subject text, pupil IDs or credentials. Per-record decisions link
-opaque record and case references; reminder decisions and outbox transitions explain
-silence, queueing and delivery separately. Diagnostic failures do not block business
-work. Startup and daily cleanup remove only diagnostic entries older than 60 days;
-normal audit history is unaffected and its standard listing excludes diagnostics.
-Container logs have independent size-based rotation; see SETUP.md for the distinction.
-
-### 1.3 Deterministic vs AI responsibility split (spec §10)
-
-| Deterministic code                       | AI (via ModelRouter)                    |
-|------------------------------------------|-----------------------------------------|
-| HTTP fetch, redirects, status codes      | is this link relevant?                  |
-| MIME parse, attachment extraction        | does this page contain obligations?     |
-| PDF text extraction, hashing             | which facts matter (→ Evidence)?        |
-| URL canonicalization, dedup keys         | new case or update to existing?         |
-| Crawl bounds, robots/budget enforcement  | corrections vs new information?         |
-| DB writes, transactions, idempotency     | mutation set for state change           |
-| Calendar/WhatsApp API calls              | notification level + message drafting   |
-
-The AI never receives credentials and never performs I/O on external systems; it
-emits *decisions* that deterministic code executes against an allow-listed tool set
-(`fetchPage`, `getPortalMessage`, `readDocument` — spec §31).
-
-### 1.4 Prompt-injection containment (spec §32)
-
-All external text (mail bodies, PDFs, pages, portal messages) is stored and passed to
-models as **quoted data inside a single dedicated field**, never concatenated into
-system instructions. Model output must validate against a strict JSON schema;
-anything failing validation is treated as an AI-category failure, not policy.
-No tool exists that can write to external systems, so injected instructions have no
-consequential capability to hijack. v1 additionally hard-disables external writes at
-the automation-toggle level (spec §45).
-
----
-
-## 2. Domain model
-
-Entities (all UUID PKs, all tables carry `created_at`):
-
-| Entity | Purpose | Key fields |
+| Package | Responsibility | Boundary |
 |---|---|---|
-| `AppUser` | Morgan, Casey | name (unique), passwordHash, whatsappNumber |
-| `Child` | Jamie (extensible to siblings) | name, school, className, gmailAddress, googleCalendarId |
-| `SchoolCase` | one real school matter (spec §7) | childId, title, summary, category, status, importance, confidence, investigationComplete, investigationNotes, dedupKey (unique) |
-| `CaseStatusEntry` | full case history (spec §8) | caseId, fromStatus, toStatus, reason, actor |
-| `Source` | every acquired raw object | caseId?, sourceType, externalId, dedupKey (unique), contentHash, canonicalUrl, storageRef, fetchStatus |
-| `Evidence` | distilled facts from one source | caseId, sourceId, kind, subject, payload (typed JSON), confidence, extractedBy, dedupKey |
-| `Investigation` | one crawl session for a case | caseId, status, pagesVisited, aiCalls, limitsHit |
-| `InvestigationStep` | per-action trace | investigationId, stepType, target, outcome, detail |
-| `ParentAction` | what a parent must do | caseId, title, dueAt, assignedTo?, status, externalUrl, recommendedInput, dedupKey |
-| `ChildRequirement` | what Jamie must do | caseId, description, relevantOn, status, dedupKey |
-| `SchoolEvent` | calendar-projected event | caseId, eventType, start/end, status, googleEventId, googleSyncStatus, supersededBy, dedupKey |
-| `CaseChange` | mutation log — the delta history | caseId, changeType (ADD/MOVE/REMOVE/CHANGE/CANCEL/REOPEN), targetType, targetId?, before, after, evidenceId? |
-| `Notification` | every outbound message | caseId?, level, channel, recipient, status, dedupKey |
-| `AuditEntry` | system action trail (spec §28) | caseId?, actor (SYSTEM/AI/MORGAN/CASEY), action, detail |
-| `ConnectorHealth` | per-connector heartbeat | connector (pk), status, lastSuccessAt, lastFailureAt, consecutiveFailures |
-| `ModelConfig` | role→model routing, editable | role (unique), provider, modelName, reasoningEffort |
-| `AiUsage` | cost tracking (spec §41) | caseId?, role, model, inputTokens, outputTokens, calls, estimatedCost |
-| `FamilyRule` | explicit policy/feedback (spec §35) | ruleKey, value, enabled |
-| `Setting` | misc kv config | key (pk), value |
-| `SecretRef` | encrypted secret storage | key (pk), cipherText |
+| `domain` | Persisted entities, repositories, state machine, case/family mutations | No HTTP or model calls |
+| `connectors/school` | Provider-neutral sessions, identity, notices, documents and typed records | Provider payloads stop here |
+| `connectors/elternportal`, `connectors/schulmanager` | Authentication and provider parsing | Return shared contracts; no family completion policy |
+| `ingestion` | Acquire, deduplicate, preserve provenance, reconcile revisions | Share notice/native-record logic across providers |
+| `email` | MIME/forward identity, domain settings and account-notice policy | Mail identity is distinct from school portal identity |
+| `documents` | Bounded PDF/DOCX/image/text reading and original storage | Detect format from content; originals remain immutable |
+| `crawler` | Bounded public HTTP fetches and browser fallback | Reject private destinations and unsafe redirects |
+| `ai` | Configured model transport, validation, caching and usage | Model output is a proposal, never direct database authority |
+| `reasoning` | Interpret evidence, resolve/merge cases and validate corrections | Apply accepted changes through audited domain operations |
+| `actions`, `requirements`, `events` | Duty changes and calendar projection | Local completion is distinct from school receipt/response |
+| `inbox` | Saved presentation copy, relevance and archive visibility | Ordinary reads do not call AI |
+| `briefing` | Shared case selection and daily/weekly plan composition | Access and eligibility precede rendering |
+| `whatsapp` | Templates, delivery queue, receipt processing and conversational commands | Recheck access/preferences before delivery |
+| `security` | Accounts, sessions, authorization and vaulted secrets | Server authorization is authoritative |
+| `api` | Request/response mapping and access checks | Controllers should delegate business decisions |
+| `scheduling` | Polling, sweeps and bounded retry entry points | Persist progress; do not encode provider parsing |
+| `diagnostics`, `health` | Safe decision traces and connector freshness | Distinguish empty results from failed checks |
+| `common` | Small deterministic primitives such as hashes and dates | No feature-specific dependencies |
 
-Enums are stored as `text` (not DB enums) to keep migrations cheap.
+These are package boundaries, not separate build modules. Some older classes combine
+several responsibilities; see [ARCHITECTURE-REVIEW.md](ARCHITECTURE-REVIEW.md) for the
+remaining pressure points. Avoid a generic framework that hides the different
+consistency rules of mail, mutable portal notices and native school records.
 
----
+## Acquisition and interpretation
 
-## 3. Case state machine
+### School portals
 
-```
-                    ┌─────────────────────────────────────────┐
-                    │          (new evidence arrives)         │
-                    ▼                                         │
- NEW ─▶ INGESTING ─▶ INVESTIGATING ─▶ READY_FOR_REASONING ────┤
-                    ▲      ▲                                     │
-                    │      │ retry            ┌─────────────────┴───┐
-                    │      └── FAILED ◀───────┤ reasoning outcome   │
-                    │                          ▼                   ▼
-                    │                    ACTION_REQUIRED    INFORMATION_ONLY
-                    │                          │                   │
-                    │                          ▼                   ▼
-                    ├─────────────────── WAITING_FOR_PARENT      COMPLETED
-                    │                          │
-                    └──────────────────────────┘
-  any state ─▶ NEEDS_REVIEW (ambiguity, low confidence, failed investigation)
-  any state ─▶ CANCELLED (school cancelled the matter)
-```
+`SchoolConnector.connect` creates an isolated `SchoolSession`. Every operation binds
+a fresh session to a verified child before reading. `SchoolAccountLock` serializes
+account context, including siblings and manual tests, using PostgreSQL advisory locks.
 
-Transition rules (enforced in `CaseStateMachine`, pure Kotlin, unit-tested):
+`SchoolIngestionService` orchestrates feeds. `SchoolNoticeIngestionService` handles
+letters, noticeboard posts and shared connected-account messages. It acquires a
+complete candidate document manifest before a short child/case transaction.
+`SchoolItem` identities and immutable revisions preserve existing source IDs and
+family completion/read state when only document metadata changes. Superseded evidence
+is excluded from current reasoning but remains available as authorized history.
 
-| From | To | Guard |
-|---|---|---|
-| NEW | INGESTING | raw source stored |
-| INGESTING | INVESTIGATING | extraction produced link candidates or attachments |
-| INGESTING | READY_FOR_REASONING | self-contained source, nothing to crawl |
-| INVESTIGATING | READY_FOR_REASONING | investigation complete or limits reached |
-| INVESTIGATING | FAILED | non-transient failure after retries (spec §40) |
-| INVESTIGATING | NEEDS_REVIEW | important source unreachable (spec §18) |
-| READY_FOR_REASONING | ACTION_REQUIRED | mutation set contains ≥1 open parent action |
-| READY_FOR_REASONING | INFORMATION_ONLY | no parent action, possibly events/info |
-| ACTION_REQUIRED | WAITING_FOR_PARENT | immediate notification sent |
-| WAITING_FOR_PARENT | COMPLETED | all actions COMPLETED/CANCELLED |
-| WAITING_FOR_PARENT | ACTION_REQUIRED | new action added |
-| INFORMATION_ONLY | COMPLETED | event passed / archived |
-| NEEDS_REVIEW | INVESTIGATING, COMPLETED | manual resolve via frontend |
-| FAILED | INVESTIGATING | retry with backoff |
-| COMPLETED, CANCELLED, INFORMATION_ONLY, ACTION_REQUIRED, WAITING_FOR_PARENT | INVESTIGATING | **reopen**: new source attached to this case |
+`SchoolRecordIngestionService` handles typed exams, homework, payments, reports and
+timetable changes. Native dates remain authoritative. Only a proven complete exam
+snapshot can withdraw missing future exams. Missing payments never prove settlement.
+AVAILABLE-empty, UNAVAILABLE and FAILED are different feed outcomes. Optional feed
+failure does not invalidate successful letter synchronization.
 
-Every transition writes `CaseStatusEntry`; state is never mutated without history.
+Connection settings explicitly control connected-account message sharing and automatic
+receipt side effects of document retrieval. Connectors do not submit consent, survey
+answers, payments or school messages. Provider-specific capabilities and limitations
+belong in the coverage plan rather than conditional branches in the UI or reasoning.
 
----
+### Email and uploads
 
-## 4. How new evidence mutates state (spec §23)
+Gmail ingestion scopes identities to child and mailbox. `EmailContent` unwraps MIME
+and explicit forwards; original message IDs, references and conservative fingerprints
+support deduplication and threading. Subject similarity alone does not establish identity.
+`email_delivery` maps repeated deliveries to existing sources. Photo/manual acquisition
+uses the common document and interpretation pipeline.
 
-The reasoning model outputs a **mutation set** — a typed list, validated against a
-schema, e.g.:
+Configured school domains match actual original sender/recipient mailboxes, including
+subdomains. An empty list accepts the selected mailbox query, except direct Google
+Account administration notices. This is not a general semantic school-mail classifier.
+Explicit forwards and Classroom/Drive traffic retain their existing rules. The same
+provenance policy excludes account-only cases from new notices and newly built plans.
 
-```json
-{ "mutations": [
-  { "type": "MOVE_EVENT", "eventKey": "wandertag", "newStart": "2026-10-12T08:00" },
-  { "type": "ADD_CHILD_REQUIREMENT", "description": "Sportschuhe", "relevantOn": "2026-10-12" },
-  { "type": "CHANGE_DEADLINE", "actionKey": "schullandheim-consent", "newDueAt": "2026-10-02" },
-  { "type": "CANCEL_EVENT", "eventKey": "sportfest-original" },
-  { "type": "ADD_PARENT_ACTION", "title": "Confirm participation", "dueAt": "2026-09-29",
-    "externalUrl": "https://...", "recommendedInput": { "participation": "yes" } }
-] }
-```
+### Evidence and changes
 
-Application is deterministic: each mutation is resolved against current state by
-`dedupKey`/`eventKey` (upsert semantics), the change is written to `CaseChange`
-(before/after JSON), and dependent projections run (calendar upsert — never create
-duplicate Google events; WhatsApp message emphasizes the **delta**, not the full state).
+Investigation reads current sources, extracts evidence, follows bounded permitted
+links and records its progress. `CaseReasoningService` interprets accumulated evidence
+and applies derived actions, requirements and events. Pending case batches run with
+per-case transactions and rechecks. Native records can be interpreted deterministically;
+model outages retain their original facts and mark wording enrichment as pending.
 
----
+`SchoolCorrectionService` prepares a proposal outside database locks, then verifies
+source fingerprints, target IDs and quotes under the case lock. Stable duty/event IDs
+preserve completion and Google identity. Ambiguous corrections remain pending for
+review and block stale Done actions.
 
-## 5. Major interfaces (ports)
+The stages are direct service calls with persisted progress and periodic recovery
+sweeps, not a fully decoupled message pipeline. Original reasoning and some projection
+paths still perform remote work within transactions; do not describe all locks as short.
+Model output and fetched documents are untrusted. IDs, quotes, dates, amounts and
+operations require validation before an accepted mutation.
 
-Behind Spring interfaces so integrations stay mockable and replaceable:
+## Cases, completion and visibility
 
-```kotlin
-interface MailConnector   { fun poll(): List<RawMail>; fun fetchAttachment(id: String): StoredDocument }
-interface PortalClient    { fun listNewItems(): List<PortalItem>; fun fetch(item: PortalItem): StoredDocument }
-interface Crawler         { fun fetch(url: URI): FetchedPage        // HTTP+parser path
-                            fun relevantLinks(page: FetchedPage): List<URI> }
-interface BrowserWorker   { fun render(url: URI): RenderedPage      // Playwright path, read-only
-                            fun describeForm(url: URI): FormDescription }
-interface ModelRouter     { fun extract(req: ExtractionRequest): ExtractionResult
-                            fun reason(req: ReasoningRequest): MutationSet
-                            fun vision(req: VisionRequest): ExtractionResult }
-interface CalendarProjector { fun upsert(evt: SchoolEvent): SyncResult; fun delete(googleEventId: String) }
-interface Notifier        { fun send(msg: OutboundMessage): SendResult }
-interface DocumentStore   { fun put(content: ByteArray, meta: DocMeta): StoredDocument; fun get(ref: String): StoredDocument }
-interface SecretVault     { fun store(key: String, value: String); fun read(key: String): String }
-```
+`CaseStateMachine` defines valid transitions; `CaseService` records status history and
+audit. A case groups related communication and owns duties and events. Parent actions,
+child requirements and school responses are different concepts. Family Done does not
+submit a response to a school. Per-user read/acknowledgment is independent of shared
+case completion. New meaningful facts can reopen a case through audited transitions.
 
-`ModelRouter` reads role→model mapping from `ModelConfig` (DB, frontend-editable,
-spec §14) and logs every call to `AiUsage`.
+Relevance is a saved read projection, evaluated against current sources and a configured
+fallback window. Archived means no longer presented as current; it does not complete
+or delete duties. Inbox copy and translations are persisted separately from accepted
+facts. Date calculations use the Europe/Berlin school calendar; supplied lesson periods
+are not invented wall-clock times.
 
----
+## Plans, notifications and calendar
 
-## 6. Database schema
+`BriefingCaseSelector` is the common audience/eligibility boundary for conversational
+and scheduled plans. It scopes cases to accessible children and family-shared unassigned cases before loading provenance,
+then excludes closed, muted, archived, pending-correction and account-only cases.
+Daily priority, homework exceptions, weekly inclusion and date windows are applied
+by the composer. Scheduled per-child plans require an assigned case; conversational
+plans can include explicitly child-assigned events from shared cases. All four plan
+entry paths use the same selection.
 
-PostgreSQL; Flyway versioned migrations (`V1__…`, `V2__…`). Full DDL lives in
-`backend/src/main/resources/db/migration/`. Summary of V1:
+`InstantNoticePolicy` handles immediate and retried case alerts; `TimetableNoticePolicy`
+ignores teacher/room-only changes while preserving meaningful schedule changes.
+`NotificationService` composes notices and `WhatsappOutbox` persists delivery intent.
+The outbox checks current access, preferences, case revision and expiry before sending.
+It saves an uncertain state before network transmission: a timeout is not permission
+to blindly send twice. Provider receipts reconcile accepted/delivered/read states.
+Already-composed aggregate plans are snapshots; their rows are not rebuilt on retry.
 
-- **Identity**: `app_user`, `child`
-- **Case core**: `school_case`, `case_status_entry`
-- **Acquisition**: `source` (unique `dedup_key`; unique `(source_type, external_id)`)
-- **Knowledge**: `evidence` (unique `dedup_key`), `investigation`, `investigation_step`
-- **Obligations**: `parent_action` (unique `dedup_key`), `child_requirement`
-- **Time**: `school_event` (unique `dedup_key`, unique nullable `google_event_id`)
-- **History/projection**: `case_change`, `notification` (unique `dedup_key`)
-- **Ops**: `audit_entry`, `connector_health`, `model_config`, `ai_usage`, `family_rule`, `setting`, `secret_ref`
+`CalendarProjectionService` updates stable app-owned Google IDs and persists failures.
+`CalendarSyncJob` backfills/retries bounded batches after consent without requiring a
+new portal import. Dedicated calendars avoid writing into a fallback primary calendar.
+Timetable notices and historical school reports are not calendar appointments.
+Changing connected accounts does not authorize deletion using another account's credentials.
 
-Idempotency is enforced by unique constraints + upserts (`ON CONFLICT DO NOTHING`
-semantics at service level), never by "hope the poll didn't rerun".
+## Authentication and frontend
 
----
+Browser login uses a server session and optional database-backed 14-day remember-me
+cookie. The frontend restores identity through `/api/auth/me`; it does not store the
+password or a Basic authorization header. Basic authentication remains for API clients.
+Cookie-authenticated mutations use Angular's XSRF cookie/header. Provider callbacks
+and webhooks have separate state/signature validation. `CurrentAccountFilter` revokes
+session privileges after account deletion, password changes or role changes.
 
-## 7. Repository structure
+A failed login must invalidate any partially created session. Invalid credentials
+produce 401; unavailable authentication infrastructure produces a safe 503 response.
+Controllers enforce child access through `KidAccessService`; ADMIN can access all
+children and PARENT only assigned children. Frontend route guards are convenience,
+not a security boundary.
 
-```
-school-agent/
-├── docs/                    # SPEC.md, ARCHITECTURE.md (this file)
-├── PROGRESS.md              # living TODO/progress file (spec §47)
-├── deploy/docker-compose.yml
-├── backend/                 # Kotlin + Spring Boot modular monolith (Maven)
-│   └── src/main/kotlin/de/schoolagent/
-│       ├── common/          # ids, hashing, clock, json
-│       ├── security/        # auth (basic for v1), users
-│       ├── domain/          # entities, enums, CaseStateMachine, repositories
-│       ├── ingestion/       # pipeline orchestration
-│       ├── connectors/      # gmail/, elternportal/, calendar/
-│       ├── crawler/         # HTTP crawler, link relevance
-│       ├── browser/         # client to playwright-worker
-│       ├── ai/              # ModelRouter, prompts, schema validation
-│       ├── actions/, events/ # services, calendar projection
-│       ├── notifications/   # whatsapp/, digest
-│       ├── audit/, health/, settings/
-│       └── api/             # REST controllers + DTOs
-├── frontend/                # Angular control center
-└── playwright-worker/       # Node/TS read-only browser service
-```
+Angular uses standalone components, signals and HttpClient services. Page-specific
+presentation models own filtering/grouping; stores own HTTP data and refresh state.
+Versioned request handling protects child switches from stale responses. Shared
+English/Spanish dictionaries own user-facing copy. Public information pages are static,
+unauthenticated and make no private API calls. The service worker caches the generic
+offline page only. See FRONTEND.md for routes, layouts and interaction conventions.
 
----
+## Reliability and operation
 
-## 8. Implementation milestones
+Deploy one API process unless concurrency has been reviewed: provider account locks
+and selected row locks are distributed, but model single-flight and several job guards
+are process-local. Scheduler overlap and horizontal scaling are not interchangeable.
 
-The spec's phases (§46) map to milestones tracked in `PROGRESS.md`:
+Durable pending flags, delivery rows, unique dedup keys and sweeps recover partial work.
+They do not create a distributed transaction with Google or Meta. Connector health
+tracks success/failure and freshness; safe diagnostics explain skips and retries.
+Docker logs are bounded and compressed; the diagnostic journal has separate retention.
 
-- **M0 (Phase 0)**: repo, Docker Compose, config, secrets baseline, CI-less test
-  baseline (`mvn test` green), auth skeleton.
-- **M1 (Phase 1)**: domain entities, state machine, V1 schema, repos + tests. ← current
-- **M2 (Phase 2)**: Google OAuth, Gmail polling, attachments, Calendar projection.
-- **M3 (Phase 3)**: document store, PDF/HTML extraction, crawler, dedup, evidence.
-- **M4 (Phase 4)**: ModelRouter + DB-backed config + usage logging.
-- **M5 (Phase 5)**: end-to-end case reasoning on fixtures (email → case → actions).
-- **M6 (Phase 6)**: Elternportal client + dedup against Gmail notifications.
-- **M7 (Phase 7)**: playwright-worker.
-- **M8 (Phase 8)**: Angular frontend (Dashboard/Calendar/Actions/Cases/Settings/Audit).
-- **M9 (Phase 9)**: WhatsApp in/out, ownership commands.
-- **M10 (Phase 10)**: retries, health monitoring, idempotency stress tests.
-- **M11 (Phase 11)**: feedback → family rules.
-
-Each milestone ends with tests green and a PROGRESS.md update.
-
----
-
-## 9. Unresolved technical risks
-
-1. **Elternportal has no official API.** Scraping may break on portal updates; session
-   lifetime unknown; ToS must be respected (read-only, personal account, low frequency).
-   *Mitigation*: notification emails as trigger/fallback; Playwright fallback;
-   connector health alerts (spec §30). **Decision needed before M6**: confirm the
-   family's portal URL/instance and acceptable access pattern.
-2. **WhatsApp channel.** Official Cloud API needs a Meta business account + public
-   webhook HTTPS. For a home deployment this implies a tunnel (cloudflared) or hosted
-   relay. **Decision needed before M9**: Cloud API vs. unofficial bridge (ToS risk).
-3. **Google OAuth consent scope.** `gmail.readonly` + `calendar` are restricted/sensitive
-   scopes. Unverified personal apps can use them in "testing" mode, but refresh tokens
-   then expire every ~7 days; publishing "in production" unverified keeps them
-   long-lived with a warning screen. Plan: production-unverified, family-only.
-4. **Case clustering quality.** Matching a correction to the right case is the hardest
-   AI task. *Mitigation*: deterministic keys first, conservative `UNSURE → NEEDS_REVIEW`,
-   feedback rules (M11).
-5. **Scanned/image PDFs** need OCR or vision-model treatment; cost/quality TBD at M3.
-6. **Cost control.** Cheap-model gate before reasoning; per-case budgets; AiUsage
-   monitoring. Thresholds tuned with real traffic after M5.
-7. **German date/locale quirks** (dd.mm.yyyy, "nächste Woche", Bavarian school terms)
-   need solid extraction prompts + explicit timezone handling (Europe/Berlin everywhere).
-8. **Home-deployment availability.** Runs on a home server/NAS; if it is down, we may
-   miss deadlines — hence connector health + "haven't checked portal in 12h" alerts are
-   MVP (spec §30), and digest mentions staleness.
-
-
-## School provider boundary (September 2026)
-
-`SchoolConnector.connect` returns an isolated `SchoolSession` exposing school identity,
-child-scoped notices and their documents. Elternportal and Schulmanager implementations
-translate their own authentication and payloads into this contract. `SchoolIngestionService`
-handles deduplication, complete document acquisition, transactional case creation,
-provenance and the existing investigation/reasoning pipeline. Higher layers do not
-call provider endpoints. Gmail remains a separate, complementary source.
-
-Each child has exactly one selected provider. Settings uses `/api/school-connection`
-for status/config, account child discovery, connection tests and sync. Schulmanager
-requires explicit remote student/institution IDs and validates them against every
-fresh login. Legacy Elternportal routes delegate to this same selection. Passwords
-are vaulted; Schulmanager status returns only password presence. Imports never call
-Schulmanager's separate `letters/confirm` endpoint or submit survey answers.
-
-WhatsApp transport credentials and AI model configuration belong to the family.
-Recipient access/preferences and message content are still scoped by child. V21
-adopts the most recently saved WhatsApp account, including encrypted secrets, and
-leaves obsolete child keys unused for rollback. Initial school-letter imports are
-quiet; subsequent changes use the existing notification rules.
-
-
-## Email identity and read-path performance (September 2026)
-
-`EmailContent` is the single MIME/forward parser. `email_delivery` records each
-child/mailbox delivery and maps duplicates to an existing source. Original message
-IDs are strongest; inline-forward fingerprints require original date, sender,
-subject, normalized body and attachment hashes. Parent forwarding envelopes and
-CC recipient differences do not create extra tasks. References (including replies
-arriving before their parent) and Gmail thread IDs group conversations; subject
-alone is deliberately insufficient. A forward stripped of identity/reference/date
-headers may remain separate. Automatic forwarding or attached `.eml` preserves the
-most metadata. Per-child domain settings match sender/recipients after unwrapping;
-Google's configured mailbox query remains the outer selection (default inbox).
-
-Ordinary read endpoints do no model work or title-rewrite mutations. Background
-case batches use one transaction per case, lock/recheck before processing, and
-include reopened investigations. `ModelRouter` hashes the complete model request,
-including prompt, model parameters and image data, and persists successful JSON
-responses through `AiResponseCache` in independent short transactions. Matching
-concurrent requests share one call in the app process; failed calls remain retryable.
-There is no distributed single-flight guarantee across multiple API replicas.
-
-The conversation reader requests AI output explicitly. Existing source translations
-and versioned case summaries remain persisted. Drafts never enter Gmail's send API;
-no additional write scope is requested. Generic cross-list obligation review returns
-only existing IDs, validates the unchanged snapshot under lock, and moves verbatim
-child details into the covering parent action using audited services. Distinct duties
-remain separate; a cached empty result prevents repeated inference on unchanged lists.
-
-## Installed web app
-
-The manifest and home-screen icons support Android and iOS standalone launches. A
-small service worker caches only the generic offline page (not API data or school
-files). School content requires connectivity. `sw.js` and the manifest must bypass
-immutable asset caching. The selected child stays in local storage; event IDs stay in
-routes, login preserves the requested route, and the manifest launch restores the
-last inbox/event URL. Browser installation conventions follow
-[Chrome's install criteria](https://web.dev/articles/install-criteria) and
-[WebKit's home-screen app behavior](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
+Use the tested compose release tooling: backup database, documents, private configuration
+and rollback image references, build, validate migrations, start API, check health, then
+serve the UI. Preserve vault keys. Never disable Flyway validation to force an upgrade.
+Private deployment identities, configuration and operational records stay outside Git.

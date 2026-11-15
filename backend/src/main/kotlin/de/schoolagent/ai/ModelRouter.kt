@@ -127,7 +127,7 @@ class ModelRouter(
     }
 
     private fun cached(body: String, validate: (String) -> Unit = {}, request: () -> String): String {
-        val key = de.schoolagent.email.EmailContent.hash("v1:$baseUrl:$body")
+        val key = de.schoolagent.common.DedupKeys.sha256("v1:$baseUrl:$body")
         return synchronized(requestLocks[(key.hashCode() and Int.MAX_VALUE) % requestLocks.size]) {
             val saved = responseCache?.get(key)
             if (saved != null) {

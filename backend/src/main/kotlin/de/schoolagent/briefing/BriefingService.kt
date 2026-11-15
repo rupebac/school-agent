@@ -9,7 +9,6 @@ import de.schoolagent.domain.model.SchoolCase
 import de.schoolagent.domain.repo.ChildRepository
 import de.schoolagent.domain.repo.ChildRequirementRepository
 import de.schoolagent.domain.repo.ParentActionRepository
-import de.schoolagent.domain.repo.SchoolCaseRepository
 import de.schoolagent.domain.repo.SchoolEventRepository
 import de.schoolagent.security.KidAccessService
 import org.springframework.security.core.userdetails.UserDetails
@@ -27,7 +26,7 @@ import java.util.UUID
  */
 @Service
 class BriefingService(
-    private val caseRepo: SchoolCaseRepository,
+    private val selection: BriefingCaseSelector,
     private val eventRepo: SchoolEventRepository,
     private val actionRepo: ParentActionRepository,
     private val requirementRepo: ChildRequirementRepository,
@@ -36,18 +35,9 @@ class BriefingService(
     private val access: KidAccessService,
     private val whatsapp: de.schoolagent.whatsapp.WhatsAppConfigService,
     private val timetable: de.schoolagent.whatsapp.TimetableNoticePolicy,
-    private val email: de.schoolagent.email.SchoolEmailPolicy,
     private val copy: de.schoolagent.inbox.InboxCopyService? = null,
-    private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null,
     private val diagnostics: IntegrationDiagnostics? = null,
 ) {
-
-    private fun currentCases(): List<SchoolCase> {
-        val all = caseRepo.findAll()
-        val visibility = relevance?.current(all).orEmpty()
-        val permitted = email.permittedCases(all.map { it.id })
-        return all.filter { visibility[it.id]?.archived != true && it.id in permitted }
-    }
 
     private val berlin = ZoneId.of("Europe/Berlin")
     private val dayFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH)
@@ -68,7 +58,7 @@ class BriefingService(
         val kidList = kids.findAll().filter { accessible.contains(it.id) }.sortedBy { it.name }
         val today = tomorrow.minusDays(1)
         val singleKid = kidList.size == 1
-        val cases = currentCases().filter { !it.isClosed() && !it.schoolUpdatePending && !it.muted }.associateBy { it.id }
+        val cases = selection.read(accessible).active
         val dayStart = tomorrow.atStartOfDay(berlin).toInstant()
         val dayEnd = tomorrow.plusDays(1).atStartOfDay(berlin).toInstant()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(dayStart, dayEnd)
@@ -146,7 +136,7 @@ class BriefingService(
         val lastWeekStart = weekStart.minusDays(7)
         val lastWeekEnd = weekStart.minusDays(1)
         val singleKid = kidList.size == 1
-        val cases = currentCases().filter { !it.isClosed() && !it.schoolUpdatePending && !it.muted }.associateBy { it.id }
+        val cases = selection.read(accessible).active
         val weekEvents = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(
             weekStart.atStartOfDay(berlin).toInstant(),
             weekEnd.plusDays(1).atStartOfDay(berlin).toInstant(),
@@ -221,13 +211,14 @@ class BriefingService(
         val allowed = access.accessibleKidIds(user).toSet()
         val end = if (weekly) start.plusDays(6) else start
         val previousStart = start.minusDays(7)
-        val allCases = caseRepo.findAll()
+        val snapshot = selection.read(allowed)
+        val allCases = snapshot.all.values
         val allRequirements = requirementRepo.findAll()
         val homeworkCases = allRequirements.filter { it.status == RequirementStatus.OPEN && it.dedupKey.startsWith("req:school:") }.map { it.caseId }.toSet()
-        val visibility = relevance?.current(allCases).orEmpty()
-        val permitted = email.permittedCases(allCases.map { it.id })
-        val activeCases = allCases.filter { it.id in permitted && visibility[it.id]?.archived != true && !it.isClosed() && !it.schoolUpdatePending && !it.muted &&
-            it.childId in allowed && (weekly || it.importanceScore >= DAILY_MIN_SCORE || it.id in homeworkCases) }.associateBy { it.id }
+        val visibility = snapshot.visibility
+        val permitted = snapshot.permitted
+        val activeCases = snapshot.active.filterValues { it.childId in allowed &&
+            (weekly || it.importanceScore >= DAILY_MIN_SCORE || it.id in homeworkCases) }
         val projections = copy?.current(activeCases.values.toList()).orEmpty()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(start.atStartOfDay(berlin).toInstant(),
             end.plusDays(1).atStartOfDay(berlin).toInstant()).also { candidates ->

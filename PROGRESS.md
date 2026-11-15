@@ -5,6 +5,18 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Architecture review and consolidation: `BriefingCaseSelector` now owns audience,
+archive and provenance selection for all daily/weekly plan entry points, preserving
+family-shared event behaviour and preventing inconsistent event metadata from
+exposing an inaccessible case. Login failures invalidate partially created sessions;
+infrastructure outages return safe 503 responses rather than wrong-password errors.
+Calendar return links survive login and duplicate in-flight submissions are ignored.
+AI caching now uses the common hashing primitive instead of the MIME parser.
+Architecture and frontend documentation describe the implementation, with ownership,
+flows and remaining design constraints in `docs/ARCHITECTURE-REVIEW.md`.
+Validation: 522 backend tests, 97 frontend tests, three worker tests and the production
+frontend build pass. This review's changes have not been deployed.
+
 Gmail school-mail filtering: domain checks parse actual sender/recipient mailboxes
 rather than display names, retaining original participants for forwarded replies.
 Direct Google Account administration mail is excluded before document storage and

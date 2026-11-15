@@ -25,17 +25,17 @@ export class LoginPage {
   ) {}
 
   submit(): void {
-    if (!this.user.trim() || !this.password) return;
+    if (this.busy() || !this.user.trim() || !this.password) return;
     this.busy.set(true);
     this.error.set(null);
     this.auth.login(this.user.trim(), this.password, this.remember).subscribe({
       next: () => {
         const target = this.route.snapshot.queryParamMap.get('returnUrl') || '/';
-        void this.router.navigateByUrl(/^\/(?:cases\/[a-f0-9-]+|settings|search|audit)?(?:\?[^\\]*)?$/.test(target) ? target : '/');
+        void this.router.navigateByUrl(/^\/(?:cases\/[a-f0-9-]+|calendar|settings|search|audit)?(?:\?[^\\]*)?$/.test(target) ? target : '/');
       },
-      error: () => {
+      error: (err: { status?: number }) => {
         this.busy.set(false);
-        this.error.set(this.i18n.t('login.failed'));
+        this.error.set(this.i18n.t(err.status === 401 ? 'login.failed' : 'login.unavailable'));
       },
     });
   }

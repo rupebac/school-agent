@@ -15,7 +15,10 @@ AI caching now uses the common hashing primitive instead of the MIME parser.
 Architecture and frontend documentation describe the implementation, with ownership,
 flows and remaining design constraints in `docs/ARCHITECTURE-REVIEW.md`.
 Validation: 522 backend tests, 97 frontend tests, three worker tests and the production
-frontend build pass. This review's changes have not been deployed.
+frontend build pass. Deployed on 2026-11-15 with verified recovery backup, preserved
+private configuration and rollback images. Both updated images, public/API health,
+migration validation, login assets and bounded logs are verified. Both GitHub
+workflows passed for the implementation commit.
 
 Gmail school-mail filtering: domain checks parse actual sender/recipient mailboxes
 rather than display names, retaining original participants for forwarded replies.

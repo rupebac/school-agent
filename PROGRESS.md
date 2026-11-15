@@ -13,7 +13,10 @@ retention, revocation and deletion. Pages contain no family records or deploymen
 identity and make no app API calls. Nginx serves both URL forms directly behind
 HTTPS proxies. Validation: 499 backend tests, 93 frontend tests, production build,
 real-backend end-to-end checks and direct nginx public-page checks pass. Private API
-access still requires authentication. Deployment verification is pending.
+access still requires authentication. Deployed on 2026-11-15 with a verified recovery
+backup, preserved private configuration and unchanged API image. Public HTTPS checks
+verify all three pages without login or redirects; private API requests still return
+401. Services, migration state and bounded logs are verified.
 
 School holiday import repair: provider rate limits now use a validated fallback,
 with a short cooldown after HTTP 429. Imports validate the complete response before

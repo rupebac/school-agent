@@ -15,7 +15,10 @@ images/layout remain in the original, with a localized reading notice. Receipt
 permission stays explicit; download permission copy now refers to documents.
 Validation: 509 backend tests, 93 frontend tests and production frontend build pass,
 including portal HTTP, idempotent ingestion, original download and malformed/archive
-limit regressions. Deployment verification is pending.
+limit regressions. Deployed on 2026-11-15 with recovery backup, preserved private
+configuration, validated migrations and bounded logs. Live portal import, original
+DOCX download and readable text are verified; school connection health recovered.
+Both GitHub workflows pass for the implementation commit.
 
 Public OAuth information pages: `/about/`, `/privacy/` and `/terms/` are static,
 unauthenticated English/Spanish pages linked from the login and account menus.

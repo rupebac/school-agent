@@ -23,12 +23,14 @@ class SchoolEmailSettings(private val settings: SettingRepository) {
         return normalized
     }
     fun accepts(kid: UUID, mail: EmailContent): Boolean {
+        if (SchoolEmailPolicy.isDirectAccountNotice(mail.sender, mail.forwarded)) return false
         val allowed = domains(kid)
         // Empty preserves the existing dedicated school mailbox behavior.
         if (allowed.isEmpty()) return true
-        val addresses = listOfNotNull(mail.sender, mail.recipients).flatMap { text ->
-            Regex("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@([A-Za-z0-9.-]+)").findAll(text).map { it.groupValues[1].lowercase() }.toList()
-        }
+        // Actual mailbox addresses only: display names may contain a different address.
+        // Original recipients intentionally retain replies to school staff in forwarded mail.
+        val addresses = listOfNotNull(mail.sender, mail.recipients).flatMap { EmailContent.addresses(it) }
+            .map { it.substringAfterLast('@') }
         return addresses.any { domain -> allowed.any { domain == it || domain.endsWith(".$it") } }
     }
 }

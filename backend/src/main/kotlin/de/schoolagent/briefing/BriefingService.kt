@@ -36,6 +36,7 @@ class BriefingService(
     private val access: KidAccessService,
     private val whatsapp: de.schoolagent.whatsapp.WhatsAppConfigService,
     private val timetable: de.schoolagent.whatsapp.TimetableNoticePolicy,
+    private val email: de.schoolagent.email.SchoolEmailPolicy,
     private val copy: de.schoolagent.inbox.InboxCopyService? = null,
     private val relevance: de.schoolagent.inbox.CaseRelevanceService? = null,
     private val diagnostics: IntegrationDiagnostics? = null,
@@ -44,7 +45,8 @@ class BriefingService(
     private fun currentCases(): List<SchoolCase> {
         val all = caseRepo.findAll()
         val visibility = relevance?.current(all).orEmpty()
-        return all.filter { visibility[it.id]?.archived != true }
+        val permitted = email.permittedCases(all.map { it.id })
+        return all.filter { visibility[it.id]?.archived != true && it.id in permitted }
     }
 
     private val berlin = ZoneId.of("Europe/Berlin")
@@ -223,7 +225,8 @@ class BriefingService(
         val allRequirements = requirementRepo.findAll()
         val homeworkCases = allRequirements.filter { it.status == RequirementStatus.OPEN && it.dedupKey.startsWith("req:school:") }.map { it.caseId }.toSet()
         val visibility = relevance?.current(allCases).orEmpty()
-        val activeCases = allCases.filter { visibility[it.id]?.archived != true && !it.isClosed() && !it.schoolUpdatePending && !it.muted &&
+        val permitted = email.permittedCases(allCases.map { it.id })
+        val activeCases = allCases.filter { it.id in permitted && visibility[it.id]?.archived != true && !it.isClosed() && !it.schoolUpdatePending && !it.muted &&
             it.childId in allowed && (weekly || it.importanceScore >= DAILY_MIN_SCORE || it.id in homeworkCases) }.associateBy { it.id }
         val projections = copy?.current(activeCases.values.toList()).orEmpty()
         val events = eventRepo.findByStartTimeBetweenOrderByStartTimeAsc(start.atStartOfDay(berlin).toInstant(),
@@ -234,6 +237,7 @@ class BriefingService(
                 if (c?.childId in allowed) diagnostics?.record(DiagnosticTrace(DiagnosticStage.PLAN_EXAM, when {
                     exam.startTime.atZone(berlin).toLocalDate() !in start..end -> DiagnosticOutcome.AFTER_WINDOW
                     exam.status == EventStatus.CANCELLED -> DiagnosticOutcome.CANCELLED
+                    exam.caseId !in permitted -> DiagnosticOutcome.NON_SCHOOL_EMAIL
                     visibility[c?.id]?.archived == true -> DiagnosticOutcome.ARCHIVED
                     c?.isClosed() == true -> DiagnosticOutcome.CLOSED
                     c?.muted == true -> DiagnosticOutcome.MUTED

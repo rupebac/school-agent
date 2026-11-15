@@ -60,7 +60,7 @@ class NotificationService(
             trace(caseEntity, if (caseEntity.muted) DiagnosticOutcome.MUTED else DiagnosticOutcome.CLOSED)
             return
         }
-        if (!policy.eligible(caseEntity)) { trace(caseEntity, DiagnosticOutcome.EXPIRED); return }
+        policy.exclusionReason(caseEntity)?.let { trace(caseEntity, it); return }
         dispatch(caseEntity)
     }
 
@@ -74,7 +74,7 @@ class NotificationService(
             trace(caseEntity, DiagnosticOutcome.QUIET_IMPORT)
             return
         }
-        if (!policy.eligible(caseEntity, schoolChange = true)) { trace(caseEntity, DiagnosticOutcome.EXPIRED); return }
+        policy.exclusionReason(caseEntity, schoolChange = true)?.let { trace(caseEntity, it); return }
         if (caseEntity.muted || caseEntity.importanceScore < 2) {
             trace(caseEntity, if (caseEntity.muted) DiagnosticOutcome.MUTED else DiagnosticOutcome.LOW_PRIORITY)
             return

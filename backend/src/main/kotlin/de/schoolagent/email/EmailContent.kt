@@ -23,7 +23,12 @@ data class EmailContent(
     }
     companion object {
         fun hash(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
-        fun address(value: String?): String? = value?.let { Regex("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}").find(it)?.value?.lowercase() }
+        fun addresses(value: String?): List<String> = value?.let { header -> runCatching {
+            InternetAddress.parseHeader(header, false).flatMap { if (it.isGroup) it.getGroup(false).orEmpty().toList() else listOf(it) }
+                .map { it.address.trim().lowercase() }
+                .filter { Regex("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}").matches(it) }
+        }.getOrDefault(emptyList()) }.orEmpty()
+        fun address(value: String?): String? = addresses(value).singleOrNull()
         fun ids(value: String?): List<String> = value?.let { Regex("<[^<>\\s]+>").findAll(it).map { m -> m.value }.toList() }.orEmpty()
         private val marker = Regex("(?im)^\\s*[-_ ]*(?:begin forwarded message|forwarded message|original message|weitergeleitete nachricht|ursprüngliche nachricht|mensaje reenviado|inicio del mensaje reenviado)[-_ :]*$")
         private val header = Regex("(?i)^(From|Von|De|To|An|Para|Cc|Date|Sent|Datum|Gesendet|Fecha|Enviado|Subject|Betreff|Asunto|Message-ID|In-Reply-To|References):\\s*(.*)$")

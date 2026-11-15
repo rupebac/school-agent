@@ -30,7 +30,9 @@ class NotificationServiceTest {
     private val needs = mockk<ChildRequirementRepository>(relaxed = true)
     private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
     private val timetable = mockk<TimetableNoticePolicy> { every { permitsCase(any()) } returns true }
-    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock, timetable)
+    private val emailSources = mockk<de.schoolagent.domain.repo.SourceRepository>(relaxed = true)
+    private val emailPolicy = de.schoolagent.email.SchoolEmailPolicy(emailSources)
+    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock, timetable, emailPolicy)
     private val service = NotificationService(config, mockk(relaxed = true), actions, events, cases, users, kids, clock, needs, inbox, copy, outbox, policy, diagnostics)
     private fun case(score: Int = 4) = SchoolCase(title = "School copying fee by 5 October", summary = "Prepare €17.20", importanceScore = score, status = CaseStatus.ACTION_REQUIRED)
     init {
@@ -207,6 +209,16 @@ class NotificationServiceTest {
         val message = slot<WaTemplates.Message>()
         verify { outbox.enqueue(any(), any(), capture(message), c.id, any(), any(), any()) }
         assertThat(message.captured.params.joinToString()).doesNotContain("Old registration", "By 02.09.2026")
+    }
+
+    @Test fun `previously imported direct account notices cannot compose new alerts`() {
+        val c = case()
+        val sender = "notification@${de.schoolagent.email.SchoolEmailPolicy.GOOGLE_ACCOUNT_DOMAIN}"
+        every { emailSources.findByCaseId(c.id) } returns listOf(Source(caseId = c.id, sourceType = SourceType.EMAIL,
+            externalId = "synthetic-account", dedupKey = "synthetic-account", contentHash = "synthetic-hash", sender = sender))
+        service.notifyDecision(c)
+        verify(exactly = 0) { outbox.enqueue(any(), any(), any(), any(), any(), any(), any()) }
+        verify { diagnostics.record(match { it.outcome == DiagnosticOutcome.NON_SCHOOL_EMAIL }) }
     }
 
 }

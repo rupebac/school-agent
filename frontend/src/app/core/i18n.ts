@@ -7,6 +7,16 @@ registerLocaleData(localeEnGb);
 export type Lang = 'en' | 'es';
 
 export const EN: Record<string, string> = {
+  'set.emailDomains.h': 'School email domains',
+  'set.emailDomains.help': 'Match the school’s domain and its communication platforms against the actual sender and recipients, including the original message inside a forward. Display names do not count.',
+  'set.emailDomains.label': 'Domains, separated by commas or new lines',
+  'set.emailDomains.emptyHelp': 'An empty list processes the whole connected inbox except direct Google Account administration notices. Add domains to limit school correspondence. Explicitly forwarded messages are preserved for review; duplicates are combined.',
+  'set.emailDomains.saving': 'Saving…',
+  'set.emailDomains.save': 'Save email domains',
+  'set.emailDomains.saved': 'Email domains saved.',
+  'set.emailDomains.loadFailed': 'Email settings could not be loaded. Reopen this panel to try again.',
+  'set.emailDomains.saveFailed': 'Could not save email domains. Try again.',
+  'set.emailDomains.invalid': 'Enter valid domain names such as school.example, without email addresses or URLs.',
   'common.dash': '—',
   'common.loading': 'Loading…',
   'common.save': 'Save',

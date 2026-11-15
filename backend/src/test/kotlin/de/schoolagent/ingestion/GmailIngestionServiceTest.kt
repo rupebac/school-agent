@@ -223,4 +223,15 @@ Bring trainers on Friday.
         verify(exactly = 1) { health.failure(ConnectorType.GMAIL, match { it.contains("401") }) }
         verify(exactly = 0) { health.success(any()) }
     }
+    @Test fun `direct account administration messages are skipped before attachments storage or case creation`() {
+        message("account", "Synthetic access granted", 1000)
+        val sender = "notification@${de.schoolagent.email.SchoolEmailPolicy.GOOGLE_ACCOUNT_DOMAIN}"
+        gmail.raws["account"] = "From: Google <$sender>\r\nTo: child@example.org\r\nSubject: Synthetic access granted\r\n\r\nReview the synthetic account.".toByteArray()
+        val result = service.pollOnce()
+        assertThat(result.ingested).isZero()
+        assertThat(savedSources).isEmpty()
+        verify(exactly = 0) { caseService.createCase(any(), any(), any(), any(), any()) }
+        assertThat(savedSettings.map { it.key }).contains("gmail.page", "gmail.cursor.internalDate")
+    }
+
 }

@@ -42,7 +42,9 @@ class WhatsappOutboxTest {
     private val needs = mockk<ChildRequirementRepository>(relaxed = true)
     private val relevance = mockk<de.schoolagent.inbox.CaseRelevanceService>(relaxed = true)
     private val timetable = mockk<TimetableNoticePolicy> { every { permitsCase(any()) } returns true }
-    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock, timetable)
+    private val emailSources = mockk<de.schoolagent.domain.repo.SourceRepository>(relaxed = true)
+    private val emailPolicy = de.schoolagent.email.SchoolEmailPolicy(emailSources)
+    private val policy = InstantNoticePolicy(actions, events, needs, relevance, clock, timetable, emailPolicy)
     private lateinit var outbox: WhatsappOutbox
     @BeforeEach fun setup() {
         outbox = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health, clock, inbox, policy, diagnostics = diagnostics)
@@ -239,7 +241,7 @@ class WhatsappOutboxTest {
         every { cases.findById(c.id) } returns Optional.of(c)
         every { relevance.isArchived(c) } returns true
         val guarded = WhatsappOutbox(rows, receipts, users, cases, config, templates, client, model, health,
-            Clock.fixed(now, ZoneOffset.UTC), inbox, InstantNoticePolicy(actions, events, needs, relevance, clock, timetable))
+            Clock.fixed(now, ZoneOffset.UTC), inbox, InstantNoticePolicy(actions, events, needs, relevance, clock, timetable, emailPolicy))
         guarded.enqueue(parent.id, "decision:${c.id}:current:false:${parent.id}:0", message(), c.id)
         guarded.send(saved.single())
         assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
@@ -310,6 +312,21 @@ class WhatsappOutboxTest {
         assertThat(saved.single().status).isEqualTo(NotificationStatus.SKIPPED)
         verify(exactly = 0) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
         verify(exactly = 0) { model.complete(any(), any(), any(), any()) }
+    }
+
+    @Test fun `a previously queued account-only alert is skipped before contacting WhatsApp`() {
+        val c = SchoolCase(title = "Synthetic account notice", status = CaseStatus.ACTION_REQUIRED, importanceScore = 5)
+        every { cases.findById(c.id) } returns Optional.of(c)
+        every { inbox.revision(c.id) } returns "current"
+        outbox.enqueue(parent.id, "decision:${c.id}:current:false:${parent.id}:0", message(), c.id)
+        val sender = "notification@${de.schoolagent.email.SchoolEmailPolicy.GOOGLE_ACCOUNT_DOMAIN}"
+        every { emailSources.findByCaseId(c.id) } returns listOf(Source(caseId = c.id,
+            sourceType = de.schoolagent.domain.enums.SourceType.EMAIL, externalId = "synthetic-account",
+            dedupKey = "synthetic-account", contentHash = "synthetic-hash", sender = sender))
+        val row = saved.single()
+        outbox.send(row)
+        assertThat(row.status).isEqualTo(NotificationStatus.SKIPPED)
+        verify(exactly = 0) { client.sendTemplate(any(), any(), any(), any(), any(), any(), any()) }
     }
 
 }

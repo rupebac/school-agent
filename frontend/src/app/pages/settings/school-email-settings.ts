@@ -1,18 +1,19 @@
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { TranslatePipe } from '../../core/i18n';
 @Component({
-  selector: 'app-school-email-settings', imports: [FormsModule],
+  selector: 'app-school-email-settings', imports: [FormsModule, TranslatePipe],
   template: `
     <section class="card">
-      <h2>School email domains</h2>
-      <p class="muted">Include the school’s domain and any platform sender domains. Original senders and recipients inside forwarded messages are checked too.</p>
-      <label>Domains, separated by commas or new lines
+      <h2>{{ 'set.emailDomains.h' | t }}</h2>
+      <p class="muted">{{ 'set.emailDomains.help' | t }}</p>
+      <label>{{ 'set.emailDomains.label' | t }}
         <textarea rows="3" [(ngModel)]="domains" [disabled]="loading() || saving()" placeholder="school.example, schulmanager-online.de"></textarea>
       </label>
-      <p class="muted">Leave empty to accept all mail in this child’s connected inbox. Both parents can forward to that inbox; duplicate original messages are combined. Replies belong together when their message references or Gmail thread match.</p>
-      <button type="button" (click)="save()" [disabled]="loading() || saving()">{{ saving() ? 'Saving…' : 'Save email domains' }}</button>
-      @if (message()) { <p role="status">{{ message() }}</p> }
+      <p class="muted">{{ 'set.emailDomains.emptyHelp' | t }}</p>
+      <button type="button" (click)="save()" [disabled]="loading() || saving()">{{ (saving() ? 'set.emailDomains.saving' : 'set.emailDomains.save') | t }}</button>
+      @if (message(); as msg) { <p role="status">{{ msg | t }}</p> }
     </section>`,
   styles: `:host { display:block; margin-top:16px; } h2 { font-size:1.15rem; } textarea { display:block; width:100%; margin:8px 0; resize:vertical; }`,
 })
@@ -30,7 +31,7 @@ export class SchoolEmailSettings {
       this.domains = ''; this.loading.set(true); this.saving.set(false); this.message.set(null);
       this.http.get<{ domains: string[] }>('/api/google/email-settings', { params: { kid } }).subscribe({
         next: config => { if (version !== this.version) return; this.domains = config.domains.join('\n'); this.loading.set(false); },
-        error: () => { if (version !== this.version) return; this.message.set('Email settings could not be loaded. Reopen this panel to try again.'); },
+        error: () => { if (version !== this.version) return; this.message.set('set.emailDomains.loadFailed'); },
       });
     });
   }
@@ -38,8 +39,8 @@ export class SchoolEmailSettings {
     const kid = this.kid(), version = this.version;
     this.saving.set(true); this.message.set(null);
     this.http.put<{ domains: string[] }>('/api/google/email-settings', { domains: this.domains.split(/[,;\s]+/).filter(Boolean) }, { params: { kid } }).subscribe({
-      next: config => { if (version !== this.version) return; this.domains = config.domains.join('\n'); this.message.set('Email domains saved.'); this.saving.set(false); },
-      error: err => { if (version !== this.version) return; this.message.set(err?.error?.detail || 'Could not save email domains.'); this.saving.set(false); },
+      next: config => { if (version !== this.version) return; this.domains = config.domains.join('\n'); this.message.set('set.emailDomains.saved'); this.saving.set(false); },
+      error: err => { if (version !== this.version) return; this.message.set(err?.status === 400 ? 'set.emailDomains.invalid' : 'set.emailDomains.saveFailed'); this.saving.set(false); },
     });
   }
 }

@@ -5,6 +5,19 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Gmail school-mail filtering: domain checks parse actual sender/recipient mailboxes
+rather than display names, retaining original participants for forwarded replies.
+Direct Google Account administration mail is excluded before document storage and
+case creation, independently of the optional school-domain list. Classroom, sharing
+notifications, school Workspace mail and explicit forwards retain their existing
+rules. A shared provenance policy also excludes previously imported account-only
+cases from new alerts, queued delivery and newly assembled daily/weekly plans,
+while preserving mixed school/manual cases and original delivery history. Settings
+explain the dedicated-inbox default in English/Spanish; diagnostics record safe
+skip counts and NON_SCHOOL_EMAIL. Validation: 518 backend tests, 93 frontend tests
+and production frontend build pass, including spoofed display names, domain
+boundaries, ingestion, existing cases, queued sends and all plan paths.
+
 DOCX school-document compatibility: shared content detection accepts validated Word
 packages from Elternportal letters/noticeboard and Schulmanager attachments. The
 common text reader extracts paragraphs, tables, headers/footers, notes and HTTP

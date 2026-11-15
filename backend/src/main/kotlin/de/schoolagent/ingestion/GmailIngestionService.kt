@@ -80,6 +80,7 @@ class GmailIngestionService(
         val cursor = settings.findById(cursorKey).orElse(null)?.valueJson?.toLongOrNull() ?: 0L
         var ingested = 0
         var attachmentCount = 0
+        var accountNoticesSkipped = 0
         var newest = cursor
 
         for (id in ids) inTransaction {
@@ -99,6 +100,10 @@ class GmailIngestionService(
 
             val raw = gmail.fetchRaw(id)
             val mail = de.schoolagent.email.EmailContent.read(raw)
+            if (de.schoolagent.email.SchoolEmailPolicy.isDirectAccountNotice(mail.sender, mail.forwarded)) {
+                accountNoticesSkipped++
+                return@inTransaction
+            }
             if (childId != null && !emailSettings.accepts(childId, mail)) return@inTransaction
             val contentHash = documents.put(raw)
             val attachments = gmail.fetchAttachments(id)
@@ -165,7 +170,8 @@ class GmailIngestionService(
         if (newest > cursor) {
             settings.save(Setting(key = cursorKey, valueJson = newest.toString(), updatedAt = clock.instant()))
         }
-        log.info("gmail poll: {} inspected, {} ingested, {} attachments", ids.size, ingested, attachmentCount)
+        log.info("gmail poll: {} inspected, {} ingested, {} attachments, {} account notices skipped",
+            ids.size, ingested, attachmentCount, accountNoticesSkipped)
         return PollResult(inspected = ids.size, ingested = ingested, attachments = attachmentCount)
     }
 

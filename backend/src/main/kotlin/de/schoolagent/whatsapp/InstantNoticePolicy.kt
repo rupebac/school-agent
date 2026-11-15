@@ -21,15 +21,19 @@ class InstantNoticePolicy(
     private val relevance: CaseRelevanceService,
     private val clock: Clock,
     private val timetable: TimetableNoticePolicy,
+    private val email: de.schoolagent.email.SchoolEmailPolicy,
 ) {
     private val berlin = ZoneId.of("Europe/Berlin")
-    fun eligible(c: SchoolCase, schoolChange: Boolean = false): Boolean {
-        if (c.suppressInitialNotification || relevance.isArchived(c) || !timetable.permitsCase(c.id)) return false
+    fun eligible(c: SchoolCase, schoolChange: Boolean = false) = exclusionReason(c, schoolChange) == null
+
+    fun exclusionReason(c: SchoolCase, schoolChange: Boolean = false): de.schoolagent.diagnostics.DiagnosticOutcome? {
+        if (!email.permitsCase(c.id)) return de.schoolagent.diagnostics.DiagnosticOutcome.NON_SCHOOL_EMAIL
+        if (c.suppressInitialNotification || relevance.isArchived(c) || !timetable.permitsCase(c.id)) return de.schoolagent.diagnostics.DiagnosticOutcome.EXPIRED
         val deadlines = mutableListOf<Instant>()
         if (!c.isInfo()) {
             val open = actions.findByCaseId(c.id).filter { it.status !in setOf(ActionStatus.COMPLETED, ActionStatus.CANCELLED) }
             val needs = requirements.findByCaseId(c.id).filter { it.required && it.status == RequirementStatus.OPEN }
-            if (open.any { it.dueAt == null } || needs.any { it.relevantOn == null }) return true
+            if (open.any { it.dueAt == null } || needs.any { it.relevantOn == null }) return null
             deadlines += open.mapNotNull { it.dueAt?.let(::endOfDay) }
             deadlines += needs.mapNotNull { it.relevantOn?.plusDays(1)?.atStartOfDay(berlin)?.toInstant() }
         }
@@ -38,7 +42,7 @@ class InstantNoticePolicy(
             (schoolChange || it.status != EventStatus.CANCELLED) && it.eventType != EventType.SCHOOL_REPORT
         }.map { if (it.allDay || it.startTime.atZone(berlin).toLocalTime() == java.time.LocalTime.MIDNIGHT)
             endOfDay(it.endTime ?: it.startTime) else it.startTime }
-        return deadlines.isEmpty() || deadlines.any { it.isAfter(clock.instant()) }
+        return if (deadlines.isEmpty() || deadlines.any { it.isAfter(clock.instant()) }) null else de.schoolagent.diagnostics.DiagnosticOutcome.EXPIRED
     }
     private fun endOfDay(time: Instant) = time.atZone(berlin).toLocalDate().plusDays(1).atStartOfDay(berlin).toInstant()
 }

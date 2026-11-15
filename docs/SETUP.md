@@ -129,10 +129,20 @@ counts and outcomes in the same 60-day journal as school and notification work.
 
 Set `SCHOOLAGENT_GMAIL_POLLING=true` to enable scheduled ingestion. The default
 query is `in:inbox`; set `SCHOOLAGENT_GMAIL_QUERY` if forwarding rules use a dedicated
-label or archive messages. Configure school sender domains in the child's email
-settings. Forwarding metadata helps identify original senders; repeated and forwarded
-messages are deduplicated within each child's mailbox. Reply drafts are copied by a
-parent and sent manually; School Agent does not send emails or submit school forms.
+label or archive messages. Configure school domains in the child's email settings
+to restrict ingestion to actual sender or recipient mailbox domains, including
+subdomains. Display names do not count. Forwarded messages use their original
+participants, retaining replies addressed to school staff. An empty domain list
+accepts the selected mailbox/query by default; use it for a dedicated school inbox.
+Direct Google Account administration notices are excluded before ingestion, even
+with an empty list. This exact provider-domain exclusion does not block Classroom,
+Drive sharing, school Workspace domains or explicit forwards. Existing cases with
+only those direct account notices are excluded from instant alerts, queued delivery
+and newly assembled daily/weekly plans; original records and delivery history stay
+available. Mixed cases with school or manually supplied evidence remain eligible.
+Repeated and forwarded messages are deduplicated within each child's mailbox.
+Reply drafts are copied by a parent and sent manually; School Agent does not send
+emails or submit school forms.
 
 ## WhatsApp and AI
 

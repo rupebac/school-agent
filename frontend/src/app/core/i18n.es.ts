@@ -4,6 +4,16 @@ import localeEs from '@angular/common/locales/es';
 registerLocaleData(localeEs);
 
 export const ES: Record<string, string> = {
+  'set.emailDomains.h': 'Dominios del correo escolar',
+  'set.emailDomains.help': 'Compara los dominios del colegio y sus plataformas con las direcciones reales del remitente y los destinatarios, incluido el mensaje original de un reenvío. Los nombres visibles no cuentan.',
+  'set.emailDomains.label': 'Dominios separados por comas o saltos de línea',
+  'set.emailDomains.emptyHelp': 'Una lista vacía procesa todo el buzón conectado salvo los avisos administrativos directos de cuentas de Google. Añade dominios para limitar el correo escolar. Los reenvíos explícitos se conservan para revisarlos y los duplicados se combinan.',
+  'set.emailDomains.saving': 'Guardando…',
+  'set.emailDomains.save': 'Guardar dominios',
+  'set.emailDomains.saved': 'Dominios guardados.',
+  'set.emailDomains.loadFailed': 'No se pudo cargar la configuración. Cierra y vuelve a abrir este panel.',
+  'set.emailDomains.saveFailed': 'No se pudieron guardar los dominios. Inténtalo de nuevo.',
+  'set.emailDomains.invalid': 'Introduce dominios válidos como school.example, sin direcciones de correo ni URL.',
   'public.links': 'Información del servicio',
   'public.about': 'Acerca de',
   'public.privacy': 'Privacidad',

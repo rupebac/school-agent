@@ -37,6 +37,8 @@ class BriefingServiceTest {
     private val access = mockk<KidAccessService>()
     private val whatsapp = mockk<de.schoolagent.whatsapp.WhatsAppConfigService>(relaxed = true)
     private val timetable = mockk<de.schoolagent.whatsapp.TimetableNoticePolicy> { every { permitsEvent(any()) } returns true }
+    private val emailSources = mockk<de.schoolagent.domain.repo.SourceRepository>(relaxed = true)
+    private val emailPolicy = de.schoolagent.email.SchoolEmailPolicy(emailSources)
     private lateinit var briefing: BriefingService
 
     private val kidId = UUID.fromString("00000000-0000-0000-0000-0000000000aa")
@@ -46,7 +48,7 @@ class BriefingServiceTest {
 
     @BeforeEach
     fun setUp() {
-        briefing = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable)
+        briefing = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, emailPolicy)
         every { whatsapp.config().frontendUrl } returns "https://school.example.org"
         every { access.account(any()) } returns null
         every { access.accessibleKidIds(any()) } returns listOf(kidId)
@@ -103,7 +105,7 @@ class BriefingServiceTest {
             mapOf(tomorrow.toString() to de.schoolagent.inbox.ReminderCopy("Buy and bring the class reading book", setOf("action:${action.id}", "need:${need.description}")))))
         every { actionRepo.findByStatusIn(any()) } returns listOf(action)
         every { requirementRepo.findAll() } returns listOf(need)
-        val saved = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, copy)
+        val saved = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, emailPolicy, copy)
         val rows = saved.plans(user, tomorrow, false).single().rows
         assertThat(rows).hasSize(1)
         assertThat(rows.single()).contains("Buy and bring the class reading book", "/cases/$caseId").doesNotContain("Reading project", "Bring the same")
@@ -117,7 +119,7 @@ class BriefingServiceTest {
             Instant.EPOCH, "UNKNOWN", null, "Period unknown", true))
         every { actionRepo.findByStatusIn(any()) } returns listOf(ParentAction(caseId = caseId,
             title = "Return form", dueAt = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "archived"))
-        val guarded = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable,
+        val guarded = BriefingService(caseRepo, eventRepo, actionRepo, requirementRepo, kids, calendar, access, whatsapp, timetable, emailPolicy,
             relevance = relevance)
         assertThat(guarded.plans(user, tomorrow, false)).isEmpty()
         assertThat(guarded.buildDaily(user, tomorrow)).isEmpty()
@@ -329,6 +331,19 @@ class BriefingServiceTest {
         assertThat(briefing.plans(user, tomorrow, true)).isEmpty()
         assertThat(briefing.buildDaily(user, tomorrow)).isEmpty()
         assertThat(briefing.buildWeekly(user, tomorrow)).isEmpty()
+    }
+
+    @Test fun `account notices already imported never become daily or weekly school reminders`() {
+        val sender = "notification@${de.schoolagent.email.SchoolEmailPolicy.GOOGLE_ACCOUNT_DOMAIN}"
+        every { emailSources.findByCaseIdIn(any()) } returns listOf(de.schoolagent.domain.model.Source(caseId = caseId,
+            sourceType = de.schoolagent.domain.enums.SourceType.EMAIL, externalId = "synthetic-account",
+            dedupKey = "synthetic-account", contentHash = "synthetic-hash", sender = sender))
+        every { actionRepo.findByStatusIn(any()) } returns listOf(ParentAction(caseId = caseId,
+            title = "Synthetic account review", dueAt = tomorrow.atStartOfDay(java.time.ZoneId.of("Europe/Berlin")).toInstant(), dedupKey = "account"))
+        assertThat(briefing.buildDaily(user, tomorrow)).isEmpty()
+        assertThat(briefing.buildWeekly(user, tomorrow)).isEmpty()
+        assertThat(briefing.plans(user, tomorrow, false)).isEmpty()
+        assertThat(briefing.plans(user, tomorrow, true)).isEmpty()
     }
 
 }

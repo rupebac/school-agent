@@ -17,6 +17,10 @@ explain the dedicated-inbox default in English/Spanish; diagnostics record safe
 skip counts and NON_SCHOOL_EMAIL. Validation: 518 backend tests, 93 frontend tests
 and production frontend build pass, including spoofed display names, domain
 boundaries, ingestion, existing cases, queued sends and all plan paths.
+Deployed on 2026-11-15 with verified recovery backup, rollback images, preserved
+private configuration, healthy services, validated migrations and bounded logs.
+Deployment checks verify updated settings assets and school/email/calendar health.
+Both GitHub workflows pass for the implementation commit.
 
 DOCX school-document compatibility: shared content detection accepts validated Word
 packages from Elternportal letters/noticeboard and Schulmanager attachments. The

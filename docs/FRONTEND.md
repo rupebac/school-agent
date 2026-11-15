@@ -43,6 +43,14 @@ un-stylable. Therefore:
 
 ## 4. Routes and components
 
+Public information pages `/about/`, `/privacy/` and `/terms/` are static HTML in
+`frontend/public`, served by the frontend outside Angular authentication. Each page
+includes English content and an expandable Spanish translation, cross-links and a
+sign-in link. They make no application API calls and contain no deployment or family
+records. The login screen and signed-in account menu link to all three. Public homepage and policy URLs can
+be used in operator-supplied OAuth branding; private app routes and APIs remain
+protected. These pages describe configured integrations without exposing settings.
+
 ```
 /login                 LoginComponent
 /                      InboxPage                 one lane per child (or “Together”), chips: All | Needs us | Coming | Info | Done

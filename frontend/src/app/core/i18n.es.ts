@@ -4,6 +4,10 @@ import localeEs from '@angular/common/locales/es';
 registerLocaleData(localeEs);
 
 export const ES: Record<string, string> = {
+  'public.links': 'Información del servicio',
+  'public.about': 'Acerca de',
+  'public.privacy': 'Privacidad',
+  'public.terms': 'Condiciones',
   'actions.emptyOverdue': 'No hay nada vencido.',
   'actions.emptyDone': 'Todavía no hay tareas completadas.',
   'actions.filter.todo': 'Pendiente',

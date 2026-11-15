@@ -24,4 +24,9 @@
       {{ busy() ? ('login.busy' | t) : ('login.submit' | t) }}
     </button>
   </form>
+  <nav class="login-links" [attr.aria-label]="'public.links' | t">
+    <a href="/about/">{{ 'public.about' | t }}</a>
+    <a href="/privacy/">{{ 'public.privacy' | t }}</a>
+    <a href="/terms/">{{ 'public.terms' | t }}</a>
+  </nav>
 </div>

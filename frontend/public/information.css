@@ -1,0 +1,32 @@
+* { box-sizing: border-box; }
+:root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #f4f5f8; line-height: 1.7; }
+body { margin: 0; }
+a { color: #4338ca; text-underline-offset: .18em; }
+a:hover { color: #312e81; }
+a:focus-visible, summary:focus-visible { outline: 3px solid #6366f1; outline-offset: 5px; border-radius: 3px; }
+.skip { position: absolute; top: -100px; left: 16px; background: white; padding: 12px; z-index: 1; }
+.skip:focus { top: 12px; }
+.site-header { max-width: 1160px; margin: auto; padding: 26px 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 22px; }
+.brand { color: #172033; font-weight: 750; font-size: 1.25rem; letter-spacing: -.04em; text-decoration: none; }
+nav { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-left: auto; font-size: .875rem; }
+nav a { text-decoration: none; color: #536078; }
+nav a[aria-current] { color: #4338ca; text-decoration: underline; }
+.sign-in { border: 1px solid #d9dde8; border-radius: 8px; padding: 7px 12px; text-decoration: none; font-size: .875rem; white-space: nowrap; background: white; }
+main { max-width: 880px; margin: 18px auto 48px; padding: 44px 56px 30px; border: 1px solid #e5e7eb; border-radius: 18px; background: white; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.055em; line-height: 1.12; margin: 0 0 22px; }
+h2, h3 { font-size: 1.18rem; letter-spacing: -.02em; line-height: 1.4; margin: 30px 0 10px; }
+p, ul { margin: 0 0 16px; }
+li { margin-bottom: 8px; }
+.eyebrow { color: #4338ca; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px; }
+.lead { color: #536078; font-size: 1.2rem; line-height: 1.55; margin-bottom: 24px; }
+.features { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); margin: 28px 0 32px; }
+.features section { padding: 18px; background: #f5f6fb; border-radius: 10px; }
+.features h2 { margin: 0 0 10px; font-size: 1rem; }
+.features p { font-size: .9rem; margin: 0; }
+.translation { border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 22px; scroll-margin-top: 18px; }
+summary { color: #4338ca; font-weight: 600; cursor: pointer; padding: 6px 0; }
+.translation-body { padding-top: 24px; }
+.translated-title { font-size: 2rem; letter-spacing: -.04em; line-height: 1.2; margin: 0 0 20px; }
+.updated { color: #64748b; font-size: .8rem; border-top: 1px solid #e5e7eb; padding-top: 18px; margin: 24px 0 0; }
+footer { max-width: 880px; margin: 0 auto 32px; padding: 0 16px; color: #64748b; font-size: .8rem; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+@media (max-width: 720px) { .site-header { padding: 20px; gap: 16px; } nav { order: 3; margin-left: 0; width: 100%; gap: 8px 18px; } .sign-in { margin-left: auto; } main { margin: 4px 12px 28px; padding: 28px 22px; border-radius: 12px; } .features { grid-template-columns: 1fr; } }

@@ -83,6 +83,31 @@ by registering that exact address on the matching Google client. Saving app sett
 does not update Google Cloud. OAuth testing-mode token lifetimes may require
 reconnecting; consult Google's current deployment guidance.
 
+The frontend serves public, bilingual information pages without signing in. In
+Google Auth Platform → Branding, use the same **School Agent** name as the app and
+these URLs on your configured HTTPS application origin:
+
+| Branding field | Path on your application origin |
+|---|---|
+| Application home page | `/about/` |
+| Privacy policy | `/privacy/` |
+| Terms of service | `/terms/` |
+
+The homepage describes Elternportal, Schulmanager and the Google integrations, and
+links to the policies. Review the published disclosures against your own enabled
+features and providers. Supply a monitored support/developer contact email in
+Google Cloud; personal deployment contacts are deliberately not shipped in the
+public source. Register your domain under Authorized domains and complete domain
+ownership verification if Google requests it.
+
+Publishing the OAuth app and completing Google verification are different steps.
+Private use by a small group personally known to the operator can qualify for
+[Google's personal-use verification exception](https://support.google.com/cloud/answer/13464323).
+Use Audience → In production to avoid Testing's seven-day authorization limit,
+then reconnect accounts whose authorizations have expired. These pages do not
+guarantee Google approval or waive requirements for wider distribution. Match Data
+access declarations to the scopes actually requested by the application.
+
 Connect Google for each child through **Settings → School → Google**. In **School
 calendar**, select or create the dedicated calendar and configure sharing. The
 calendar is a projection of internal school events; the app database remains the

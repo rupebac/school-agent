@@ -246,6 +246,12 @@
   bottom: 0;
 }
 
+.public-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
 .m-account {
   display: none;
 

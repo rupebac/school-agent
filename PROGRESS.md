@@ -5,6 +5,16 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+Public OAuth information pages: `/about/`, `/privacy/` and `/terms/` are static,
+unauthenticated English/Spanish pages linked from the login and account menus.
+The homepage identifies both school connectors and Google features; privacy copy
+describes account permissions, family sharing, optional AI processing, storage,
+retention, revocation and deletion. Pages contain no family records or deployment
+identity and make no app API calls. Nginx serves both URL forms directly behind
+HTTPS proxies. Validation: 499 backend tests, 93 frontend tests, production build,
+real-backend end-to-end checks and direct nginx public-page checks pass. Private API
+access still requires authentication. Deployment verification is pending.
+
 School holiday import repair: provider rate limits now use a validated fallback,
 with a short cooldown after HTTP 429. Imports validate the complete response before
 writing, preserve global-entry idempotence and return explicit failure statuses.

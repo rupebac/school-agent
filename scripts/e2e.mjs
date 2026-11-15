@@ -31,7 +31,12 @@ const server = http.createServer(async (req, res) => {
   try {
     let path=resolve(staticRoot, '.'+decodeURIComponent(new URL(req.url,'http://example.test').pathname));
     if (!path.startsWith(staticRoot+sep)) path=resolve(staticRoot,'index.html');
-    let bytes; try { bytes=await readFile(path); } catch { path=resolve(staticRoot,'index.html'); bytes=await readFile(path); }
+    let bytes;
+    try { bytes=await readFile(path); }
+    catch {
+      try { path=resolve(path,'index.html'); bytes=await readFile(path); }
+      catch { path=resolve(staticRoot,'index.html'); bytes=await readFile(path); }
+    }
     res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json'})[extname(path)]||'application/octet-stream');
     res.end(bytes);
   } catch { res.writeHead(400); res.end(); }
@@ -66,6 +71,14 @@ try {
     if(healthy) break; await new Promise(resolve=>setTimeout(resolve,500));
   }
   if(!healthy) throw new Error('Synthetic backend did not become healthy');
+  for (const [path, title] of [['about', 'Less school admin.'], ['privacy', 'Privacy Policy'], ['terms', 'Terms of Use']]) {
+    const response=await fetch(`${origin}/${path}/`);
+    const html=await response.text();
+    if(!response.ok || !html.includes(title) || !html.includes('lang="es"') || html.includes('<app-root'))
+      throw new Error('Public information page requires login or did not render');
+  }
+  const privateResponse=await fetch(origin+'/api/cases');
+  if(privateResponse.status!==401) throw new Error('Private API must still require authentication');
   if(process.argv.includes('--serve')) {
     await writeFile('/tmp/school-e2e-origin',origin,{mode:0o600});
     console.log('Synthetic full-stack fixture ready:',origin);
@@ -75,6 +88,7 @@ try {
   const {chromium}=require('playwright'); browser=await chromium.launch();
   const page=await browser.newPage(); const errors=[]; page.on('pageerror',e=>errors.push(e.name));
   await page.goto(origin);
+  await page.getByRole('link',{name:'Privacy',exact:true}).waitFor();
   await page.locator('input[name=user]').fill(credentials.username);
   await page.locator('input[name=password]').fill(credentials.password);
   await page.locator('button[type=submit]').click();
@@ -96,5 +110,5 @@ try {
   });
   await page.getByRole('button',{name:'Añadir un hijo',exact:true}).waitFor();
   if(errors.length) throw new Error('Browser runtime errors');
-  console.log('PASS: real-backend login, persistent child creation, Calendar, Spanish and mobile layout');
+  console.log('PASS: public information pages, private API authentication, real-backend login, persistent child creation, Calendar, Spanish and mobile layout');
 } finally { await cleanup(); }

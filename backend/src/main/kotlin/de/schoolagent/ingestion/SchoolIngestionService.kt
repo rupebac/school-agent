@@ -90,7 +90,7 @@ class SchoolIngestionService(
                             }
                             if (result.failed > 0) feed.copy(status = SchoolFeedStatus.FAILED,
                                 message = if (!session.canAcquireDocuments && feed.kind == SchoolNoticeKind.LETTER)
-                                    "PDF downloads require automatic receipt permission in the connection settings"
+                                    "Document downloads require automatic receipt permission in the connection settings"
                                 else "Some documents could not be checked; previous versions are retained and the check will retry")
                             else {
                                 transactions.executeWithoutResult {

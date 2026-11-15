@@ -52,6 +52,13 @@ modules and permissions. Their individual status appears in Settings; an unavail
 optional section does not make the letters connection unhealthy. Verify class details
 before using the exam feed. See [PROGRESS.md](../PROGRESS.md) for validation limits.
 
+School letters and attachments support DOCX as well as PDF. Word files use shared
+text/link extraction, so reading, translation and reasoning see their text while
+original downloads retain the `.docx` extension. Images and visual formatting must
+be checked in the original. DOCX parsing accepts inputs up to 8 MiB with bounded ZIP
+expansion and XML structure; macro-enabled files and arbitrary ZIPs are not accepted.
+Elternportal still requires explicit document-download/automatic-receipt permission.
+
 ## Google mail and calendar
 
 An administrator can configure the family's Google OAuth web client in

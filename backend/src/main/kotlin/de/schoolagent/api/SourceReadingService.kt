@@ -84,6 +84,9 @@ class SourceReadingService(
                 original.length > MAX_DOCUMENT_CHARS -> "This document exceeds the translation limit; the original text is shown."
                 source.mimeType?.contains("pdf") == true && needsVision(source) -> "Scanned document: only the first three pages can be read. Check the original for missing pages or text."
                 source.mimeType?.startsWith("image/") == true -> "Text was read from an image. Check dates and amounts against the original."
+                source.mimeType == de.schoolagent.documents.DocxReader.MIME_TYPE -> if (language == UserLanguage.ES)
+                    "Se ha extraído el texto de Word. Las imágenes y el formato visual deben comprobarse en el original."
+                else "Word text was extracted. Check the original for images and visual layout."
                 translatedPair?.second != true && !alreadyInLanguage(original, language) -> "Translation is unavailable; showing the original text."
                 else -> null
             },

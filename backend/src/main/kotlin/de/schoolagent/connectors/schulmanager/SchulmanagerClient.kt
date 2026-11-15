@@ -191,10 +191,12 @@ class SchulmanagerSession(
             }
             val encoded = Base64.getEncoder().encodeToString(storedFile.toByteArray(Charsets.UTF_8))
             val bytes = getBytes("${origin.trimEnd('/')}/download-file/$encoded")
-            val mime = attachment.path("contentType").asText().ifBlank { descriptor[4].asText("application/octet-stream") }
-            if (mime == "application/pdf" && !bytes.take(5).toByteArray().contentEquals("%PDF-".toByteArray())) {
-                throw SchoolConnectionException("Schulmanager returned an invalid PDF")
-            }
+            val declared = attachment.path("contentType").asText().ifBlank { descriptor[4].asText("application/octet-stream") }
+                .substringBefore(';').trim().lowercase()
+            val detected = de.schoolagent.documents.SchoolFileFormats.detect(bytes)
+            if (declared in setOf("application/pdf", de.schoolagent.documents.DocxReader.MIME_TYPE) && detected == null)
+                throw SchoolConnectionException("Schulmanager returned an invalid document")
+            val mime = detected ?: declared
             return SchoolDocument(attachment.path("id").asText(), attachment.path("filename").asText("Attachment"), mime, bytes)
     }
 

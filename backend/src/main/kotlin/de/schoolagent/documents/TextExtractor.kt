@@ -14,7 +14,7 @@ import java.util.Properties
 data class ExtractedDoc(val text: String, val links: List<String>)
 
 /**
- * Deterministic text extraction (spec §10): MIME, HTML and PDF — no AI here.
+ * Deterministic text extraction (spec §10): MIME, HTML, PDF and DOCX — no AI here.
  * HTML always yields both readable text and absolute-ish link targets.
  */
 object TextExtractor {
@@ -145,12 +145,15 @@ object TextExtractor {
         }
     }
 
-    fun byMimeType(bytes: ByteArray, mimeType: String?): ExtractedDoc? = when {
-        mimeType == null -> null
-        mimeType.equals("message/rfc822", ignoreCase = true) -> fromMime(bytes)
-        mimeType.equals("application/pdf", ignoreCase = true) -> fromPdf(bytes)
-        mimeType.contains("html", ignoreCase = true) -> fromHtml(String(bytes, Charsets.UTF_8))
-        mimeType.startsWith("text/", ignoreCase = true) -> String(bytes, Charsets.UTF_8).let { ExtractedDoc(it, textLinks(it)) }
-        else -> null
+    fun byMimeType(bytes: ByteArray, mimeType: String?): ExtractedDoc? {
+        val mime = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return null
+        return when {
+            mime == "message/rfc822" -> fromMime(bytes)
+            mime == "application/pdf" -> fromPdf(bytes)
+            mime == DocxReader.MIME_TYPE -> DocxReader.read(bytes)
+            mime.contains("html") -> fromHtml(String(bytes, Charsets.UTF_8))
+            mime.startsWith("text/") -> String(bytes, Charsets.UTF_8).let { ExtractedDoc(it, textLinks(it)) }
+            else -> null
+        }
     }
 }

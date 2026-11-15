@@ -40,7 +40,9 @@ class SchulmanagerClientTest {
                             assertThat(req.path("moduleName").asText()).isEqualTo("letters")
                             mapOf("id" to 1, "title" to "Trip", "text" to "<p>Bring a lunch.</p><p>Meet at school.</p>", "answerDeadline" to "2026-10-01", "studentStatuses" to listOf(mapOf("student" to mapOf("id" to 7), "formData" to emptyMap<String, Any>())),
                                 "questions" to listOf(mapOf("id" to 1, "text" to "May your child attend?")),
-                                "attachments" to listOf(mapOf("id" to 12, "filename" to "letter.pdf", "contentType" to "application/pdf", "file" to json.writeValueAsString(listOf(1, "letters", "file", "secret-key", "application/pdf", 15, "letter.pdf")))))
+                                "attachments" to listOf(
+                                    mapOf("id" to 12, "filename" to "letter.pdf", "contentType" to "application/pdf", "file" to json.writeValueAsString(listOf(1, "letters", "file", "secret-key", "application/pdf", 15, "letter.pdf"))),
+                                    mapOf("id" to 13, "filename" to "synthetic.docx", "contentType" to "application/octet-stream", "file" to json.writeValueAsString(listOf(1, "letters", "file", "synthetic-key", "application/octet-stream", 100, "synthetic.docx")))))
                         }
                         "get-remote-storage-url" -> base
                         else -> error("Unexpected request: $endpoint")
@@ -49,7 +51,10 @@ class SchulmanagerClientTest {
                 }
                 else -> "%PDF-1.7 test"
             }
-            val bytes = if (path.startsWith("/download-file/")) reply.toString().toByteArray() else json.writeValueAsBytes(reply)
+            val bytes = if (path.startsWith("/download-file/")) {
+                val descriptor = java.util.Base64.getDecoder().decode(path.substringAfter("/download-file/")).toString(Charsets.UTF_8)
+                if (descriptor.contains("synthetic.docx")) de.schoolagent.documents.DocxFixtures.create() else reply.toString().toByteArray()
+            } else json.writeValueAsBytes(reply)
             exchange.sendResponseHeaders(200, bytes.size.toLong()); exchange.responseBody.use { it.write(bytes) }
         }
         server.start()
@@ -66,9 +71,11 @@ class SchulmanagerClientTest {
                 assertThat(details.response?.receipt).isEqualTo("PENDING")
                 assertThat(parts[0].sentAt).isEqualTo(letters.first().receivedAt)
                 assertThatThrownBy { session.details(letters.first(), "8") }.isInstanceOf(SchoolConnectionException::class.java)
-                assertThat(parts).hasSize(2)
+                assertThat(parts).hasSize(3)
                 assertThat(String(parts[0].bytes)).contains("Bring a lunch.\n", "School response requested: May your child attend?", "2026-10-01").doesNotContain("secret-key")
                 assertThat(String(parts[1].bytes)).startsWith("%PDF-")
+                assertThat(parts[2].mimeType).isEqualTo(de.schoolagent.documents.DocxReader.MIME_TYPE)
+                assertThat(de.schoolagent.documents.TextExtractor.byMimeType(parts[2].bytes, parts[2].mimeType)!!.text).contains("Bring a workbook")
                 assertThat(calls).containsOnly("get-letters", "get-letter-for-reading", "get-remote-storage-url")
             }
         } finally { server.stop(0) }

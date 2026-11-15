@@ -42,7 +42,7 @@ class CaseSummaryReadingService(
         if (!model.available(ModelRole.TEXT)) throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Summary is temporarily unavailable. You can still read the original sources.")
         val all = sources.findByCaseId(id)
         val docs = all.sortedByDescending { it.originalSentAt ?: it.receivedAt ?: it.createdAt }.take(12).map { it to readings.original(it) }
-        val partial = all.size > 12 || docs.any { (source, text) -> text.isNullOrBlank() || text.length > 12000 || source.mimeType?.startsWith("image/") == true || source.mimeType?.contains("pdf") == true }
+        val partial = all.size > 12 || docs.any { (source, text) -> text.isNullOrBlank() || text.length > 12000 || source.mimeType?.startsWith("image/") == true || source.mimeType?.contains("pdf") == true || source.mimeType == de.schoolagent.documents.DocxReader.MIME_TYPE }
         val readable = docs.filter { !it.second.isNullOrBlank() }
         if (readable.isEmpty()) throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "No readable source text yet.")
         val input = readable.map { (source, body) -> mapOf("sourceId" to source.id.toString(), "title" to source.title, "sentAt" to (source.originalSentAt ?: source.receivedAt)?.toString(), "text" to body!!.take(12000)) }

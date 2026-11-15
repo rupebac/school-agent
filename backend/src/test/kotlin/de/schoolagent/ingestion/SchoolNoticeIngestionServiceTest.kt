@@ -420,4 +420,18 @@ class SchoolNoticeIngestionServiceTest {
         verify(exactly = 1) { nativeNotifications.notifyDecision(any()) }
     }
 
+    @Test fun `Word source preserves original MIME and bytes and repeated notice import is idempotent`() {
+        val original = de.schoolagent.documents.DocxFixtures.create()
+        content = listOf(SchoolDocument("letter", "Synthetic Word letter", de.schoolagent.documents.DocxReader.MIME_TYPE, original))
+        assertThat(sync().failed).isZero()
+        val first = item()
+        val source = sources.findById(first.sourceId).orElseThrow()
+        assertThat(source.mimeType).isEqualTo(de.schoolagent.documents.DocxReader.MIME_TYPE)
+        assertThat(documents.get(source.storageRef!!)).isEqualTo(original)
+        assertThat(de.schoolagent.documents.TextExtractor.byMimeType(documents.get(source.storageRef!!)!!, source.mimeType)!!.text).contains("Bring a workbook")
+        assertThat(sync().changed).isZero()
+        assertThat(item().version).isEqualTo(1)
+        assertThat(revisions.findByItemKeyOrderByVersionDesc(first.itemKey)).hasSize(1)
+    }
+
 }

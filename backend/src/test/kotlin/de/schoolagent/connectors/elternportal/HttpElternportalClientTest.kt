@@ -17,6 +17,7 @@ class HttpElternportalClientTest {
     private var loginResponse = false
     private var wrongLetterChild = false
     private var downloads = 0
+    private var downloadBytes = "%PDF-1.7 test".toByteArray()
     private val selections = mutableListOf<String>()
     private fun page(content: String = "", selection: String = selected) = """
         <a href='/logout'>Logout</a><h2 id='schule'>Example School</h2>
@@ -35,6 +36,11 @@ class HttpElternportalClientTest {
         server.createContext("/") { exchange ->
             val path = exchange.requestURI.path
             val authenticated = exchange.requestHeaders.getFirst("Cookie")?.contains("PHPSESSID=test-session") == true
+            if (path == "/aktuelles/get_file/" && authenticated && !loginResponse) {
+                downloads++
+                exchange.sendResponseHeaders(200, downloadBytes.size.toLong())
+                exchange.responseBody.use { it.write(downloadBytes) }; exchange.close(); return@createContext
+            }
             val body = when {
                 path == "/includes/project/auth/login.php" -> {
                     exchange.responseHeaders.add("Set-Cookie", "PHPSESSID=test-session; Path=/")
@@ -48,7 +54,6 @@ class HttpElternportalClientTest {
                     "1"
                 }
                 path == "/aktuelles/elternbriefe" -> page("""<table><tr><td>#1</td></tr><tr><td><a href='aktuelles/get_file/?repo=99&csrf=abc123'>letter.pdf</a></td><td>School letter 11.10.2026, 09:00 letter.pdf</td></tr></table>""", if (wrongLetterChild) "41" else selected)
-                path == "/aktuelles/get_file/" -> { downloads++; "%PDF-1.7 test" }
                 path == "/service/termine/liste/schulaufgaben" -> page("""<a class='active' href='service/termine/liste/schulaufgaben'>Schulaufgabenplan (8C)</a><table class='termine-table'><tr><th>Datum</th><th>Zeit</th><th>Fach</th></tr><tr><td>20.11.2026</td><td></td><td>Mathematik</td></tr></table>""")
                 else -> page()
             }.toByteArray()
@@ -99,4 +104,28 @@ class HttpElternportalClientTest {
             assertThat(downloads).isZero()
         }
     }
+    @Test fun `Word letters are detected from bytes despite a PDF link label and still require receipt permission`() {
+        downloadBytes = de.schoolagent.documents.DocxFixtures.create()
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test", allowReceiptDownloads = true)).use { session ->
+            val child = session.selectStudent(SchoolStudentScope("Jamie", "8C", null))!!
+            val notice = session.notices(child.id).single()
+            val document = session.documents(notice, child.id).single()
+            assertThat(document.mimeType).isEqualTo(de.schoolagent.documents.DocxReader.MIME_TYPE)
+            assertThat(document.bytes).isEqualTo(downloadBytes)
+            assertThat(de.schoolagent.documents.TextExtractor.byMimeType(document.bytes, document.mimeType)!!.text).contains("Bring a workbook")
+        }
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test")).use { session ->
+            session.selectStudent(SchoolStudentScope("Jamie", "8C", null))
+            assertThatThrownBy { session.documents(session.notices("42").single(), "42") }.isInstanceOf(SchoolConnectionException::class.java)
+        }
+        assertThat(downloads).isEqualTo(1)
+    }
+    @Test fun `HTML downloads are never accepted as Word letters`() {
+        downloadBytes = "<html>Session expired</html>".toByteArray()
+        connector().connect(SchoolCredentials(SchoolProvider.ELTERNPORTAL, base, "parent", "test", allowReceiptDownloads = true)).use { session ->
+            session.selectStudent(SchoolStudentScope("Jamie", "8C", null))
+            assertThatThrownBy { session.documents(session.notices("42").single(), "42") }.isInstanceOf(SchoolConnectionException::class.java)
+        }
+    }
+
 }

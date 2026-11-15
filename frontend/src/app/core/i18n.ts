@@ -446,7 +446,7 @@ export const EN: Record<string, string> = {
   "school.section.MESSAGE": "School messages",
   "school.section.NOTICEBOARD": "Noticeboard",
   'set.portal.password': 'Password',
-  'set.portal.receiptPermission': 'Allow PDF downloads and automatic receipt confirmation',
+  'set.portal.receiptPermission': 'Allow document downloads and automatic receipt confirmation',
   'set.portal.receiptExplanation': 'Elternportal may record receipt when School Agent downloads a PDF, including when checking for corrections. This does not mark family tasks as Done. Survey answers and consent submissions remain manual.',
   'school.section.HOMEWORK': 'Assigned homework',
   'school.section.TIMETABLE_CHANGE': 'Timetable changes',

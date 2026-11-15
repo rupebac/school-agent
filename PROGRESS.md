@@ -5,6 +5,18 @@ implementation state only; private deployment notes and family records stay outs
 
 ## Current state
 
+DOCX school-document compatibility: shared content detection accepts validated Word
+packages from Elternportal letters/noticeboard and Schulmanager attachments. The
+common text reader extracts paragraphs, tables, headers/footers, notes and HTTP
+hyperlinks for reading and reasoning; originals retain their bytes and `.docx`
+download extension. ZIP expansion, part count, XML size/depth and extracted text
+are bounded; DTDs, external XML and macro-enabled packages are rejected. Word
+images/layout remain in the original, with a localized reading notice. Receipt
+permission stays explicit; download permission copy now refers to documents.
+Validation: 509 backend tests, 93 frontend tests and production frontend build pass,
+including portal HTTP, idempotent ingestion, original download and malformed/archive
+limit regressions. Deployment verification is pending.
+
 Public OAuth information pages: `/about/`, `/privacy/` and `/terms/` are static,
 unauthenticated English/Spanish pages linked from the login and account menus.
 The homepage identifies both school connectors and Google features; privacy copy

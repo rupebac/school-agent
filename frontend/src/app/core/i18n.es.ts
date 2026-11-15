@@ -485,7 +485,7 @@ export const ES: Record<string, string> = {
   "school.section.MESSAGE": "Mensajes del colegio",
   "school.section.NOTICEBOARD": "Tablón de anuncios",
   'set.portal.password': 'Contraseña',
-  'set.portal.receiptPermission': 'Permitir descargar PDF y confirmar automáticamente su recepción',
+  'set.portal.receiptPermission': 'Permitir descargar documentos y confirmar automáticamente su recepción',
   'set.portal.receiptExplanation': 'Elternportal puede registrar la recepción cuando School Agent descarga un PDF, también al comprobar correcciones. Esto no marca las tareas familiares como hechas. Las respuestas a encuestas y los consentimientos siguen siendo manuales.',
   'school.section.HOMEWORK': 'Deberes asignados',
   'school.section.TIMETABLE_CHANGE': 'Cambios de horario',

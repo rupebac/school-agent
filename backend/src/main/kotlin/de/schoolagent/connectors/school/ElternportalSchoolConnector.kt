@@ -110,20 +110,20 @@ class ElternportalSchoolConnector : SchoolConnector {
                         "Noticeboard inline media needs a verified download path"
                     }
                     if (item.attachments.isNotEmpty() && !credentials.allowReceiptDownloads)
-                        throw SchoolConnectionException("Noticeboard PDF downloads require receipt permission")
+                        throw SchoolConnectionException("Noticeboard document downloads require receipt permission")
                     val attachments = item.attachments.map { attachment ->
                         additional.attachment(attachment, client.downloadFile(attachment))
                     }
                     return listOf(SchoolDocument("letter", notice.title, "text/html", item.html.toByteArray(), notice.receivedAt)) + attachments
                 }
                 if (!credentials.allowReceiptDownloads) throw SchoolConnectionException(
-                    "Allow PDF downloads and automatic receipt confirmation in the school connection settings first")
+                    "Allow document downloads and automatic receipt confirmation in the school connection settings first")
                 val brief = briefs.getValue(notice.id)
                 val bytes = client.downloadFile(brief)
-                if (!bytes.take(5).toByteArray().contentEquals("%PDF-".toByteArray())) {
-                    throw SchoolConnectionException("Elternportal returned an invalid PDF; please test the connection again")
-                }
-                return listOf(SchoolDocument("letter", brief.pdfName ?: notice.title, "application/pdf", bytes))
+                val mime = de.schoolagent.documents.SchoolFileFormats.detect(bytes)
+                if (mime !in setOf("application/pdf", de.schoolagent.documents.DocxReader.MIME_TYPE))
+                    throw SchoolConnectionException("Elternportal returned an unsupported document; open the original in the portal")
+                return listOf(SchoolDocument("letter", brief.pdfName ?: notice.title, requireNotNull(mime), bytes))
             }
             override fun details(notice: SchoolNotice, studentId: String?): SchoolNoticeDetails =
                 SchoolNoticeDetails(documents(notice, studentId),

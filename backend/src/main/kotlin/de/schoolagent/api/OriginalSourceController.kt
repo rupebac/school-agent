@@ -19,7 +19,14 @@ class OriginalSourceController(private val inbox: FamilyInboxService, private va
         val source = sources.findById(sourceId).orElse(null)?.takeIf { it.caseId == id }
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
         val bytes = source.storageRef?.let { documents.get(it) } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-        val extension = when { source.mimeType == "application/pdf" -> "pdf"; source.mimeType == "message/rfc822" -> "eml"; source.mimeType == "image/jpeg" -> "jpg"; source.mimeType == "image/png" -> "png"; else -> "txt" }
+        val extension = when {
+            source.mimeType == de.schoolagent.documents.DocxReader.MIME_TYPE -> "docx"
+            source.mimeType == "application/pdf" -> "pdf"
+            source.mimeType == "message/rfc822" -> "eml"
+            source.mimeType == "image/jpeg" -> "jpg"
+            source.mimeType == "image/png" -> "png"
+            else -> "txt"
+        }
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM)
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"school-document.$extension\"")
             .header("X-Content-Type-Options", "nosniff").cacheControl(CacheControl.noStore()).body(bytes)

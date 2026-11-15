@@ -165,4 +165,23 @@ class SourceReadingServiceTest {
         createdAt = Instant.now(),
         updatedAt = Instant.now(),
     )
+    @Test fun `Word reading uses shared extraction and explains visual limitations in the viewer language`() {
+        val documents = de.schoolagent.documents.FileSystemDocumentStore(tempDir.toString())
+        val ref = documents.put(de.schoolagent.documents.DocxFixtures.create())
+        val caseId = UUID.randomUUID()
+        val source = source(caseId, ref, de.schoolagent.documents.DocxReader.MIME_TYPE)
+        val cases = mockk<SchoolCaseRepository>()
+        val sources = mockk<SourceRepository>()
+        every { cases.findById(caseId) } returns Optional.of(mockk<SchoolCase> { every { id } returns caseId })
+        every { sources.findById(source.id) } returns Optional.of(source)
+        val router = mockk<ModelRouter>()
+        every { router.available(any()) } returns false
+        val service = SourceReadingService(cases, sources, noTranslations(), documents, router)
+        val english = service.read(caseId, source.id, UserLanguage.EN)
+        val spanish = service.read(caseId, source.id, UserLanguage.ES)
+        assertThat(english.originalText).contains("Bring a workbook")
+        assertThat(english.notice).contains("Word", "original")
+        assertThat(spanish.notice).contains("imágenes", "original")
+    }
+
 }
